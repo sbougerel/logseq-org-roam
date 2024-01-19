@@ -154,11 +154,11 @@ If the buffer is new, `org-mode' startup is inhibited.  This
 macro does not save the file, but will kill the buffer if it was
 previously created."
   (declare (indent 1) (debug t))
-  (with-temp-buffer
-    (delay-mode-hooks
-      (let ((org-inhibit-startup t)) (org-mode)))
-    (insert-file-contents ,file)
-    ,@body))
+  `(with-temp-buffer
+     (delay-mode-hooks
+       (let ((org-inhibit-startup t)) (org-mode)))
+     (insert-file-contents ,file)
+     ,@body))
 
 (defun org-roam-logseq--inventory-indexed (files)
   "Map FILES to their :indexed property.
@@ -545,46 +545,57 @@ parsed to ensure correctness and uniqueness of each arguments."
              ))))
      inventory)))
 
-(defconst org-roam-logseq--log-buffer-name "*Logseq to Org-roam Log*"
+(defconst org-roam-logseq--log-buffer-name "*Org-roam Logseq*"
   "Name for the log buffer.")
 
 (defmacro org-roam-logseq--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
   (declare (debug t))
-  (let ((old-dir (make-symbol "old_dir")))
-    `(let* ((,old-dir default-directory)
-            (standard-output
-             (with-current-buffer
-                 (get-buffer-create org-roam-logseq--log-buffer-name)
-               (if (= (point-min) (point-max))
-                   (insert "\n\n"))
-               (kill-all-local-variables)
-               (setq default-directory ,old-dir)
-               (setq buffer-read-only nil)
-               (setq buffer-file-name nil)
-               (setq buffer-undo-list t) ;; disable undo
-               (setq inhibit-read-only t)
-               (setq inhibit-modification-hooks t))))
-       (prog1 (progn ,@body)
-         (with-current-buffer standard-output
-           (setq inhibit-read-only nil)
-           (setq buffer-read-only t)
-           (setq org-inhibit-startup t)
-           (setq org-startup-with-beamer-mode nil)
-           (setq org-startup-with-inline-images nil)
-           (setq org-startup-with-latex-preview nil)
-           (org-mode)
-           (goto-char (point-max)))))))
+  `(let* ((standard-output
+           (with-current-buffer
+               (get-buffer-create org-roam-logseq--log-buffer-name)
+             (if (= (point-min) (point-max))
+                 (insert "\n\n"))
+             (kill-all-local-variables)
+             (setq buffer-read-only nil)
+             (setq buffer-file-name nil)
+             (setq buffer-undo-list t) ;; disable undo
+             (setq inhibit-read-only t)
+             (setq inhibit-modification-hooks t)
+             (current-buffer))))
+     (prog1 (progn ,@body)
+       (with-current-buffer standard-output
+         (setq inhibit-read-only nil)
+         (setq buffer-read-only t)
+         (setq org-inhibit-startup t)
+         (setq org-startup-with-beamer-mode nil)
+         (setq org-startup-with-inline-images nil)
+         (setq org-startup-with-latex-preview nil)
+         (org-mode)
+         (goto-char (point-max))))))
 
-(defmacro org-roam-logseq--princ-format (form &rest args)
-  "Call `princ' and `format' with FORM and ARGS."
-  (princ (apply #'format form args)))
+(defvar org-roam-logseq-link-types 'both
+  "Types of links `org-roam-logseq' should convert.
+Valid values are:
+- \='files
+- \='fuzzy
+- \='both")
+
+(defvar org-roam-logseq-capture-template "d"
+  "Key of the `org-roam' capture template to use.")
 
 (defun org-roam-logseq--start (force create)
   "Log start of execution and state of FORCE and CREATE flags."
-  (let ((p (symbol-function #'org-roam-logseq--princ-format)))
-    (p "* Run %s\n" (format-time-string "%x at %X"))
-    (p "Settings:")))
+  (princ
+   (concat
+    (format "* Ran %s\n" (format-time-string "%x at %X"))
+    "With flags:\n"
+    (format "- ~force~ was: %s\n" force)
+    (format "- ~create~ was: %s\n" create)
+    "With settings:\n"
+    (format "- ~org-roam-logseq-link-types~: %S\n" org-roam-logseq-link-types)
+    (format "- ~org-roam-logseq-capture-template~: %S\n" org-roam-logseq-capture-template)
+    "\n")))
 
 ;;;###autoload
 (defun org-roam-logseq (&optional mode)
@@ -631,26 +642,25 @@ nil: parse only files that are not yet indexed (by `org-roam')
   and does not create any new files (when it encounters a link
   created by Logseq without an existing target).
 
-'(4) or 4 or 'force: parse all files (even those already indexed)
-  and does not create any new files.  Equivalent to
+\='(4) or 4 or \='force: parse all files (even those already
+  indexed) and does not create any new files.  Equivalent to
   \\[universal-argument] \\[org-roam-logseq].
 
-'(16) or 16 or 'create: parse only files that are not yet indexed
-  and create new files using your capture templates (when it
-  encounters a Logseq link without target).  Equivalent to
+\='(16) or 16 or \='create: parse only files that are not yet
+  indexed and create new files using your capture templates (when
+  it encounters a Logseq link without target).  Equivalent to
   \\[universal-argument] \\[universal-argument]
   \\[org-roam-logseq].
 
-'(64) or 64 or 'force-create: parse all files and create new
+\='(64) or 64 or \='force-create: parse all files and create new
   files using your capture templates.  Equivalent to
   \\[universal-argument] \\[universal-argument]
   \\[universal-argument] \\[org-roam-logseq].
 
-To find out how `org-roam-logseq' dectect Logseq links, read
-the documentation string of `org-roam-logseq-link-types'.  To
-find out how `org-roam-logseq' uses your own capture
-templates, read the documentation string of
-`org-roam-logseq-capture'."
+To find out how `org-roam-logseq' dectect Logseq links, read the
+documentation string of `org-roam-logseq-link-types'.  To find
+out how `org-roam-logseq' uses your own capture templates, read
+the documentation string of `org-roam-logseq-capture'."
   (interactive "P")
   (let (force_flag create_flag)
     (cond
@@ -668,9 +678,10 @@ templates, read the documentation string of
       (setq force_flag t)
       (setq create_flag t)))
     (org-roam-logseq--with-log-buffer
-     (org-roam-logseq--start force_flag create_flag))
-    ;;(let ((inventory (org-roam-logseq--inventory-all)))
-    ;;    (org-roam-logseq--update-all inventory))
+     (org-roam-logseq--start force_flag create_flag)
+     ;;(let ((inventory (org-roam-logseq--inventory-all)))
+     ;;    (org-roam-logseq--update-all inventory))
+     )
     ))
 
 (provide 'org-roam-logseq)
