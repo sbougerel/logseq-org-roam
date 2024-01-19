@@ -109,6 +109,16 @@
 (require 'org)
 (require 'org-roam)
 
+(defvar org-roam-logseq-link-types 'both
+  "Types of links `org-roam-logseq' should convert.
+Valid values are:
+- \='files
+- \='fuzzy
+- \='both")
+
+(defvar org-roam-logseq-capture-template "d"
+  "Key of the `org-roam' capture template to use.")
+
 (defconst org-roam-logseq--named
   '(babel-call
     center-block
@@ -127,6 +137,35 @@
     table
     verse-block)
   "List of org-elements that can be affiliated with a :name attribute.")
+
+(defconst org-roam-logseq--log-buffer-name "*Org-roam Logseq*"
+  "Name for the log buffer.")
+
+(defmacro org-roam-logseq--with-log-buffer (&rest body)
+  "Bind standard output to a dedicated buffer for the duration of BODY."
+  (declare (debug t))
+  `(let* ((standard-output
+           (with-current-buffer
+               (get-buffer-create org-roam-logseq--log-buffer-name)
+             (if (= (point-min) (point-max))
+                 (insert "\n\n"))
+             (kill-all-local-variables) ;; return to fundamental for logging
+             (setq buffer-read-only nil)
+             (setq buffer-file-name nil)
+             (setq buffer-undo-list t) ;; disable undo
+             (setq inhibit-read-only t)
+             (setq inhibit-modification-hooks t)
+             (current-buffer))))
+     (prog1 (progn ,@body)
+       (with-current-buffer standard-output
+         (setq inhibit-read-only nil)
+         (setq buffer-read-only t)
+         (setq org-inhibit-startup t)
+         (setq org-startup-with-beamer-mode nil)
+         (setq org-startup-with-inline-images nil)
+         (setq org-startup-with-latex-preview nil)
+         (org-mode) ;; back to org-mode
+         (goto-char (point-max))))))
 
 (defmacro org-roam-logseq--with-edit-buffer (file &rest body)
   "Find an existing buffer for FILE, set `org-mode' and execute BODY.
@@ -545,45 +584,6 @@ parsed to ensure correctness and uniqueness of each arguments."
              ))))
      inventory)))
 
-(defconst org-roam-logseq--log-buffer-name "*Org-roam Logseq*"
-  "Name for the log buffer.")
-
-(defmacro org-roam-logseq--with-log-buffer (&rest body)
-  "Bind standard output to a dedicated buffer for the duration of BODY."
-  (declare (debug t))
-  `(let* ((standard-output
-           (with-current-buffer
-               (get-buffer-create org-roam-logseq--log-buffer-name)
-             (if (= (point-min) (point-max))
-                 (insert "\n\n"))
-             (kill-all-local-variables)
-             (setq buffer-read-only nil)
-             (setq buffer-file-name nil)
-             (setq buffer-undo-list t) ;; disable undo
-             (setq inhibit-read-only t)
-             (setq inhibit-modification-hooks t)
-             (current-buffer))))
-     (prog1 (progn ,@body)
-       (with-current-buffer standard-output
-         (setq inhibit-read-only nil)
-         (setq buffer-read-only t)
-         (setq org-inhibit-startup t)
-         (setq org-startup-with-beamer-mode nil)
-         (setq org-startup-with-inline-images nil)
-         (setq org-startup-with-latex-preview nil)
-         (org-mode)
-         (goto-char (point-max))))))
-
-(defvar org-roam-logseq-link-types 'both
-  "Types of links `org-roam-logseq' should convert.
-Valid values are:
-- \='files
-- \='fuzzy
-- \='both")
-
-(defvar org-roam-logseq-capture-template "d"
-  "Key of the `org-roam' capture template to use.")
-
 (defun org-roam-logseq--start (force create)
   "Log start of execution and state of FORCE and CREATE flags."
   (princ
@@ -679,7 +679,7 @@ the documentation string of `org-roam-logseq-capture'."
       (setq create_flag t)))
     (org-roam-logseq--with-log-buffer
      (org-roam-logseq--start force_flag create_flag)
-     ;;(let ((inventory (org-roam-logseq--inventory-all)))
+     ;;(let ((inventory (org-roam-logseq--inventory-all force_flag)))
      ;;    (org-roam-logseq--update-all inventory))
      )
     ))
