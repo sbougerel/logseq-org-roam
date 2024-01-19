@@ -220,10 +220,10 @@ be taken in each file."
             (setq unmodified nil))
         (unless (and existing_buf (not unmodified))
           (org-roam-logseq--with-temp-buffer file
-                                             ;; Populate inventory information
-                                             (let ((props (gethash file inventory)))
-                                               (setq props (org-roam-logseq--buffer-props props inventory))
-                                               (puthash file props inventory))))))
+            ;; Populate inventory information
+            (let ((props (gethash file inventory)))
+              (setq props (org-roam-logseq--buffer-props props inventory))
+              (puthash file props inventory))))))
     inventory))
 
 (defun org-roam-logseq--buffer-props (props inventory)
@@ -523,7 +523,7 @@ parsed to ensure correctness and uniqueness of each arguments."
   t)
 
 (defun org-roam-logseq--update-all (inventory)
-  "Update all files in INVENTORY as needed"
+  "Update all files in INVENTORY as needed."
   (pcase-let ((`(,reverse_map ,_)
                (org-roam-logseq--reverse-map inventory)))
     (maphash
@@ -535,27 +535,56 @@ parsed to ensure correctness and uniqueness of each arguments."
                    (not (plist-get :titled props))
                    (not (plist-get :id-ed props)))
            ;; There's updates to perform, load the file in an org buffer
-           (org-roam-logseq--with-quiet-org-buffer file
-                                                   (org-roam-logseq--update-links update_links)
-                                                   (org-roam-logseq--update-top
-                                                    (unless (plist-get :id-ed props) (plist-get :id props))
-                                                    (unless (plist-get :title-ed props) (plist-get :title props))
-                                                    (plist-get :aliases props))
-                                                   ;; Updates done, time to save the buffer
-                                                   ))))
+           (org-roam-logseq--with-edit-buffer file
+             (org-roam-logseq--update-links update_links)
+             (org-roam-logseq--update-top
+              (unless (plist-get :id-ed props) (plist-get :id props))
+              (unless (plist-get :title-ed props) (plist-get :title props))
+              (plist-get :aliases props))
+             ;; Updates done, time to save the buffer
+             ))))
      inventory)))
 
-(defconst logseg-to-org-roam--log-buffer-name "*Logseq to Org-roam Log*"
+(defconst org-roam-logseq--log-buffer-name "*Logseq to Org-roam Log*"
   "Name for the log buffer.")
 
 (defmacro org-roam-logseq--with-log-buffer (&rest body)
-  "Get or create the logging buffer."
-  ;; Start with space to disable undo recording
+  "Bind standard output to a dedicated buffer for the duration of BODY."
+  (declare (debug t))
+  (let ((old-dir (make-symbol "old_dir")))
+    `(let* ((,old-dir default-directory)
+            (standard-output
+             (with-current-buffer
+                 (get-buffer-create org-roam-logseq--log-buffer-name)
+               (if (= (point-min) (point-max))
+                   (insert "\n\n"))
+               (kill-all-local-variables)
+               (setq default-directory ,old-dir)
+               (setq buffer-read-only nil)
+               (setq buffer-file-name nil)
+               (setq buffer-undo-list t) ;; disable undo
+               (setq inhibit-read-only t)
+               (setq inhibit-modification-hooks t))))
+       (prog1 (progn ,@body)
+         (with-current-buffer standard-output
+           (setq inhibit-read-only nil)
+           (setq buffer-read-only t)
+           (setq org-inhibit-startup t)
+           (setq org-startup-with-beamer-mode nil)
+           (setq org-startup-with-inline-images nil)
+           (setq org-startup-with-latex-preview nil)
+           (org-mode)
+           (goto-char (point-max)))))))
 
-  (get-buffer-create org-roam-logseq--l)
-  ;; Check out `with-output-to-temp-buffer' for ideas
+(defmacro org-roam-logseq--princ-format (form &rest args)
+  "Call `princ' and `format' with FORM and ARGS."
+  (princ (apply #'format form args)))
 
-  )
+(defun org-roam-logseq--start (force create)
+  "Log start of execution and state of FORCE and CREATE flags."
+  (let ((p (symbol-function #'org-roam-logseq--princ-format)))
+    (p "* Run %s\n" (format-time-string "%x at %X"))
+    (p "Settings:")))
 
 ;;;###autoload
 (defun org-roam-logseq (&optional mode)
@@ -618,7 +647,7 @@ nil: parse only files that are not yet indexed (by `org-roam')
   \\[universal-argument] \\[org-roam-logseq].
 
 To find out how `org-roam-logseq' dectect Logseq links, read
-the documentation string of `org-roam-logseq-links-types'.  To
+the documentation string of `org-roam-logseq-link-types'.  To
 find out how `org-roam-logseq' uses your own capture
 templates, read the documentation string of
 `org-roam-logseq-capture'."
@@ -638,12 +667,11 @@ templates, read the documentation string of
           (eq mode 'force-create))
       (setq force_flag t)
       (setq create_flag t)))
-    (message "force_flag %s create_flag %s" force_flag create_flag)
+    (org-roam-logseq--with-log-buffer
+     (org-roam-logseq--start force_flag create_flag))
     ;;(let ((inventory (org-roam-logseq--inventory-all)))
     ;;    (org-roam-logseq--update-all inventory))
     ))
 
-
-
 (provide 'org-roam-logseq)
-;;; org-roam-logseq ends here
+;;; org-roam-logseq.el ends here
