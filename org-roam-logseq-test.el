@@ -67,9 +67,9 @@
                         ((:output "123456789"))))
            (let ((actual (org-roam-logseq--buffer-props '(:indexed nil) fake-inventory))
                  (expected '(:indexed nil
-                             :id-ed nil
+                             :id-p nil
                              :id "123456789"
-                             :titled nil
+                             :title-p nil
                              :title "note"
                              :links nil)))
              (should (equal actual expected)))))))))
@@ -89,9 +89,9 @@
                         ((:output "123456789"))))
            (let ((actual (org-roam-logseq--buffer-props '(:indexed nil) fake-inventory))
                  (expected '(:indexed nil
-                             :id-ed nil
+                             :id-p nil
                              :id "123456789"
-                             :titled nil
+                             :title-p nil
                              :title "note"
                              :links nil)))
              (should (equal actual expected)))))))))
@@ -114,9 +114,9 @@
                         ((:output "123456789"))))
            (let ((actual (org-roam-logseq--buffer-props '(:indexed nil) fake-inventory))
                  (expected '(:indexed nil
-                             :id-ed nil
+                             :id-p nil
                              :id "123456789"
-                             :titled nil
+                             :title-p nil
                              :title "note"
                              :links nil)))
              (should (equal actual expected)))))))))
@@ -136,9 +136,9 @@
           (org-mode)
           (let ((actual (org-roam-logseq--buffer-props '(:indexed t) fake-inventory))
                 (expected '(:indexed t
-                            :id-ed t
+                            :id-p t
                             :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                            :titled t
+                            :title-p t
                             :title "Note"
                             :aliases ("b" "e")
                             :links nil)))
@@ -183,9 +183,9 @@ A [[test links]] matching headline.
                               ((:input '("dir/note.org") :output-generator #'identity))))
            (let ((actual (org-roam-logseq--buffer-props '(:indexed t) fake-inventory))
                  (expected '(:indexed t
-                             :id-ed t
+                             :id-p t
                              :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                             :titled t
+                             :title-p t
                              :title "Test note"
                              :links ((file 400 427 "dir/note.org" "[[file:dir/note.org][note]]")
                                      (title 288 299 "logseq" "[[Logseq]] ")))))
@@ -193,13 +193,13 @@ A [[test links]] matching headline.
 
 (ert-deftest org-roam-logseq--reverse-map--with-conflicts ()
   (let ((fake-inventory (make-hash-table :test #'equal)))
-    (puthash "x" '(:titled t
+    (puthash "x" '(:title-p t
                    :title "A"
                    :aliases ("b" "c")) fake-inventory)
-    (puthash "y" '(:titled t
+    (puthash "y" '(:title-p t
                    :title "B"
                    :aliases ("d" "c")) fake-inventory)
-    (puthash "z" '(:titled t
+    (puthash "z" '(:title-p t
                    :title "D"
                    :aliases ("e" "f")) fake-inventory)
     (let* ((actual_tuple (org-roam-logseq--reverse-map fake-inventory))
