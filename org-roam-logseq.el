@@ -266,11 +266,11 @@ Return the number of files that were parsed."
                     (plist-get plist :cache-p))
           (setq count (1+ count))
           (org-roam-logseq--with-temp-buffer file
-            (let ((new_plist (plist-put plist :hash
-                                        (secure-hash 'sha256 (current-buffer)))))
-              (setq new_plist
-                    (org-roam-logseq--parse-buffer new_plist inventory))
-              (puthash downcased new_plist inventory))))))
+                                             (let ((new_plist (plist-put plist :hash
+                                                                         (secure-hash 'sha256 (current-buffer)))))
+                                               (setq new_plist
+                                                     (org-roam-logseq--parse-buffer new_plist inventory))
+                                               (puthash downcased new_plist inventory))))))
     count))
 
 (defun org-roam-logseq--inventory-all (&optional force)
@@ -299,10 +299,12 @@ The plist contains the following properties:
 - `:links' is the list of Logseq links present in the file"
   (princ "** Inventory:\n")
   (let* ((files (org-roam-list-files))
+         (start (current-time))
          (inventory (org-roam-logseq--inventory-init files))
          count_cached
          count_modified
-         count_parsed)
+         count_parsed
+         elapsed)
     (setq count_cached
           (if force
               (org-roam-logseq--inventory-from-cache inventory)
@@ -311,6 +313,7 @@ The plist contains the following properties:
           (org-roam-logseq--inventory-mark-modified inventory))
     (setq count_parsed
           (org-roam-logseq--parse-files files inventory))
+    (setq elapsed (float-time (time-subtract (current-time) start)))
     (princ
      (concat
       (format "%s files found in org-roam directory\n"
@@ -320,7 +323,8 @@ The plist contains the following properties:
       (format "%s files currently modified in a buffer\n"
               count_modified)
       (format "%s remaining files have been parsed\n"
-              count_parsed)))
+              count_parsed)
+      (format "This took %.3f seconds\n\n" elapsed)))
     inventory))
 
 (defun org-roam-logseq--image-file-p (file)
@@ -339,9 +343,9 @@ The plist contains the following properties:
                    (image-type-available-p (setq type (cdr elem))))
 	  (throw 'found type))))))
 
-(defun org-roam-logseq--parse-buffer (props inventory)
-  "Update PROPS based on INVENTORY and current buffer's content.
-This function updates PROPS with the following properties:
+(defun org-roam-logseq--parse-buffer (plist inventory)
+  "Update PLIST based on INVENTORY and current buffer's content.
+This function updates PLIST with the following properties:
 
 - `:title-p' t if the file already has a title
 - `:id-p' t if the file already has an ID
@@ -486,26 +490,26 @@ The leftover links are the candidates to be converted to
                  (setq id (org-element-property :value element)))
              (if (equal "ROAM_ALIASES" (org-element-property :key element))
                  (setq roam_aliases (split-string-and-unquote (downcase (org-element-property :value element))))))))))
-     ;; populate props
+     ;; populate plist
      (if (and id (not (string= id "")))
          (progn
-           (setq props (plist-put props :id-p t))
-           (setq props (plist-put props :id id)))
-       (setq props (plist-put props :id-p nil))
-       (setq props (plist-put props :id (org-id-new))))
+           (setq plist (plist-put plist :id-p t))
+           (setq plist (plist-put plist :id id)))
+       (setq plist (plist-put plist :id-p nil))
+       (setq plist (plist-put plist :id (org-id-new))))
      (if (and title (not (string= title "")))
          (progn
-           (setq props (plist-put props :title-p t))
-           (setq props (plist-put props :title title)))
-       (setq props (plist-put props :title-p nil))
-       (setq props (plist-put props :title
+           (setq plist (plist-put plist :title-p t))
+           (setq plist (plist-put plist :title title)))
+       (setq plist (plist-put plist :title-p nil))
+       (setq plist (plist-put plist :title
                               (file-name-sans-extension
                                (file-name-base
                                 (buffer-file-name (buffer-base-buffer)))))))
      (if-let ((logseq_aliases (seq-difference aliases roam_aliases)))
-         (setq props (plist-put props :aliases logseq_aliases)))
+         (setq plist (plist-put plist :aliases logseq_aliases)))
      ;; Filter out link that match targets, headlines or named elements
-     (setq props (plist-put props :links
+     (setq plist (plist-put plist :links
                             (seq-filter (lambda (link)
                                           (not (gethash (nth 3 link)
                                                         text-targets)))
@@ -648,13 +652,13 @@ TODO: better descriptions."
                    (not (plist-get :id-p props)))
            ;; There's updates to perform, load the file in an org buffer
            (org-roam-logseq--with-edit-buffer file
-             (org-roam-logseq--update-links update_links)
-             (org-roam-logseq--update-top
-              (unless (plist-get :id-p props) (plist-get :id props))
-              (unless (plist-get :title-ed props) (plist-get :title props))
-              (plist-get :aliases props))
-             ;; Updates done, time to save the buffer
-             ))))
+                                              (org-roam-logseq--update-links update_links)
+                                              (org-roam-logseq--update-top
+                                               (unless (plist-get :id-p props) (plist-get :id props))
+                                               (unless (plist-get :title-ed props) (plist-get :title props))
+                                               (plist-get :aliases props))
+                                              ;; Updates done, time to save the buffer
+                                              ))))
      inventory)))
 
 (defun org-roam-logseq--start (force create)
