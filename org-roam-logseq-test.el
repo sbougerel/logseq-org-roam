@@ -43,10 +43,10 @@
   (let ((result (org-roam-logseq--inventory-init '("a" "b" "c" "d"))))
     (should (hash-table-p result))
     (should (equal (hash-table-count result) 4))
-    (should (equal (gethash "a" result) '(:indexed nil)))
-    (should (equal (gethash "b" result) '(:indexed nil)))
-    (should (equal (gethash "c" result) '(:indexed nil)))
-    (should (equal (gethash "d" result) '(:indexed nil)))))
+    (should (equal (gethash "a" result) '(:cache-p nil)))
+    (should (equal (gethash "b" result) '(:cache-p nil)))
+    (should (equal (gethash "c" result) '(:cache-p nil)))
+    (should (equal (gethash "d" result) '(:cache-p nil)))))
 
 (ert-deftest org-roam-logseq--inventory-from-cache ()
   (mocker-let
@@ -65,19 +65,20 @@
                                    :where (= node-id $s1)]
                                   "y")
                                 :output '(("e"))))))
-   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b" "c" "d"))))
-     (org-roam-logseq--inventory-from-cache inventory)
+   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b" "c" "d")))
+          (count (org-roam-logseq--inventory-from-cache inventory)))
+     (should (eq count 2))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 4))
-     (should (equal (gethash "a" inventory) '(:indexed t
+     (should (equal (gethash "a" inventory) '(:cache-p t
                                               :id-p t
                                               :id "x"
                                               :title-p t
                                               :title "A"
                                               :aliases nil)))
-     (should (equal (gethash "b" inventory) '(:indexed nil)))
-     (should (equal (gethash "c" inventory) '(:indexed nil)))
-     (should (equal (gethash "d" inventory) '(:indexed t
+     (should (equal (gethash "b" inventory) '(:cache-p nil)))
+     (should (equal (gethash "c" inventory) '(:cache-p nil)))
+     (should (equal (gethash "d" inventory) '(:cache-p t
                                               :id-p t
                                               :id "y"
                                               :title-p t
@@ -89,16 +90,17 @@
    ((find-buffer-visiting (f) ((:input '("a") :output 'a)
                                (:input '("b") :output nil)))
     (buffer-modified-p (b) ((:input '(a) :output t))))
-   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b"))))
-     (org-roam-logseq--inventory-mark-modified inventory)
+   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b")))
+          (actual (org-roam-logseq--inventory-mark-modified inventory)))
+     (should (eq actual 1))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 2))
      (should (equal (gethash "a" inventory)
-                    '(:indexed nil :modified t)))
+                    '(:cache-p nil :modified-p t)))
      (should (equal (gethash "b" inventory)
-                    '(:indexed nil))))))
+                    '(:cache-p nil))))))
 
-(ert-deftest org-roam-logseq--buffer-props--empty ()
+(ert-deftest org-roam-logseq--parse-buffer--empty ()
   (with-temp-buffer
     (insert "")
     (let ((fake-inventory (make-hash-table :test #'equal)))
@@ -110,8 +112,8 @@
                               ((:input '(nil) :output "dir/note.org")))
             (org-id-new ()
                         ((:output "123456789"))))
-           (let ((actual (org-roam-logseq--buffer-props '(:indexed nil) fake-inventory))
-                 (expected '(:indexed nil
+           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil) fake-inventory))
+                 (expected '(:cache-p nil
                              :id-p nil
                              :id "123456789"
                              :title-p nil
@@ -119,7 +121,7 @@
                              :links nil)))
              (should (equal actual expected)))))))))
 
-(ert-deftest org-roam-logseq--buffer-props--simple ()
+(ert-deftest org-roam-logseq--parse-buffer--simple ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 *")
@@ -132,8 +134,8 @@
                               ((:input '(nil) :output "dir/note.org")))
             (org-id-new ()
                         ((:output "123456789"))))
-           (let ((actual (org-roam-logseq--buffer-props '(:indexed nil) fake-inventory))
-                 (expected '(:indexed nil
+           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil) fake-inventory))
+                 (expected '(:cache-p nil
                              :id-p nil
                              :id "123456789"
                              :title-p nil
@@ -141,7 +143,7 @@
                              :links nil)))
              (should (equal actual expected)))))))))
 
-(ert-deftest org-roam-logseq--buffer-props--heading-id ()
+(ert-deftest org-roam-logseq--parse-buffer--heading-id ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 :PROPERTIES:
@@ -157,8 +159,8 @@
                               ((:input '(nil) :output "dir/note.org")))
             (org-id-new ()
                         ((:output "123456789"))))
-           (let ((actual (org-roam-logseq--buffer-props '(:indexed nil) fake-inventory))
-                 (expected '(:indexed nil
+           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil) fake-inventory))
+                 (expected '(:cache-p nil
                              :id-p nil
                              :id "123456789"
                              :title-p nil
@@ -166,7 +168,7 @@
                              :links nil)))
              (should (equal actual expected)))))))))
 
-(ert-deftest org-roam-logseq--buffer-props--aliases ()
+(ert-deftest org-roam-logseq--parse-buffer--aliases ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -179,8 +181,8 @@
       (delay-mode-hooks
         (let ((org-inhibit-startup t))
           (org-mode)
-          (let ((actual (org-roam-logseq--buffer-props '(:indexed t) fake-inventory))
-                (expected '(:indexed t
+          (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t) fake-inventory))
+                (expected '(:cache-p t
                             :id-p t
                             :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
                             :title-p t
@@ -189,7 +191,7 @@
                             :links nil)))
             (should (equal actual expected))))))))
 
-(ert-deftest org-roam-logseq--buffer-props--links ()
+(ert-deftest org-roam-logseq--parse-buffer--links ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -218,16 +220,16 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
     (let ((fake-inventory (make-hash-table :test #'equal)))
-      (puthash "dir/logseq.org" '(:indexed t) fake-inventory)
-      (puthash "dir/note.org" '(:indexed nil) fake-inventory)
+      (puthash "dir/logseq.org" '(:cache-p t) fake-inventory)
+      (puthash "dir/note.org" '(:cache-p nil) fake-inventory)
       (delay-mode-hooks
         (let ((org-inhibit-startup t))
           (org-mode)
           (mocker-let
            ((expand-file-name (p)
                               ((:input '("dir/note.org") :output-generator #'identity))))
-           (let ((actual (org-roam-logseq--buffer-props '(:indexed t) fake-inventory))
-                 (expected '(:indexed t
+           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t) fake-inventory))
+                 (expected '(:cache-p t
                              :id-p t
                              :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
                              :title-p t
