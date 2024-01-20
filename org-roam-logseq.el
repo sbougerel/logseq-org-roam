@@ -112,9 +112,9 @@
 (defvar org-roam-logseq-link-types 'both
   "Types of links `org-roam-logseq' should convert.
 Valid values are:
-- \='files
-- \='fuzzy
-- \='both")
+- \\='files
+- \\='fuzzy
+- \\='both")
 
 (defvar org-roam-logseq-capture-template "d"
   "Key of the `org-roam' capture template to use.")
@@ -199,24 +199,53 @@ previously created."
      (insert-file-contents ,file)
      ,@body))
 
-(defun org-roam-logseq--inventory-indexed (files)
-  "Map FILES to their :indexed property.
-The hashtable returned maps each FILES' path to a plist
-containing \='(:indexed t) if the file is present in the `org-roam'
-index, and \='(:indexed nil) otherwise.
-
-NOTE: The path of each file is downcased, since *Logseq* is
-case-insensitive when performing file search (filesystem
-independence)."
-  (let ((inventory (make-hash-table :test #'equal))
-        (files-cached (org-roam-db-query [:select file :from files])))
-    (dolist (file files)
-      (puthash (downcase file) '(:indexed nil) inventory))
-    (dolist (file files-cached)
-      ;; org-roam-db-query wraps each row in a list
-      (if (gethash (downcase (car file)) inventory)
-          (puthash (downcase (car file)) '(:indexed t) inventory)))
+(defun org-roam-logseq--inventory-init (files)
+  "Initialise inventory with FILES.
+The path of each file is downcased, since Logseq is
+case-insensitive when performing file search."
+  (let ((inventory (make-hash-table :test #'equal)))
+    (mapc (lambda (elem) (puthash (downcase elem)
+                                  (list :indexed nil) inventory))
+          files)
     inventory))
+
+(defun org-roam-logseq--inventory-from-cache (inventory)
+  "Populate INVENTORY with `org-roam' cache information."
+  (let ((data-cached (org-roam-db-query [:select [file id title]
+                                         :from nodes
+                                         :where (= 0 level)])))
+    (pcase-dolist (`(,file ,id ,title) data-cached)
+      ;; TODO: Consider throwing an error if cache is not updated
+      (when (gethash (downcase file) inventory)
+        (let ((aliases (mapcar #'car
+                               (org-roam-db-query [:select [alias] :from aliases
+                                                   :where (= node-id $s1)]
+                                                  id))))
+          (puthash (downcase file)
+                   (list :indexed t
+                         :id-p t
+                         :id id
+                         :title-p t
+                         :title title
+                         :aliases aliases)
+                   inventory)))))
+  inventory)
+
+(defun org-roam-logseq--inventory-mark-modified (inventory)
+  "Check if any buffer visiting a file in INVENTORY is modified."
+  (let (alist)
+    (maphash (lambda (file _)
+               (push (cons file
+                           (if-let* ((existing_buf (find-buffer-visiting file)))
+                               (buffer-modified-p existing_buf)))
+                     alist))
+             inventory)
+    (mapc (lambda (file_mod)
+            (when (cdr file_mod)
+              (let* ((plist (gethash (car file_mod) inventory))
+                     (new_plist (plist-put plist :modified t)))
+                (puthash (car file_mod) new_plist inventory))))
+          alist)))
 
 ;; TODO: add support for force flag!
 (defun org-roam-logseq--inventory-all (&optional force)
@@ -252,29 +281,23 @@ from `org-roam-logseq--inventory-files'.  Afterward the
 properties for all files are populated by
 `org-roam-logseq--buffer-props'."
   (let* ((files (org-roam-list-files))
-         (inventory (org-roam-logseq--inventory-indexed files)))
+         (inventory (org-roam-logseq--inventory-init files)))
+    (when force
+      (org-roam-logseq--inventory-from-cache inventory))
+    (org-roam-logseq--inventory-mark-modified inventory)
     (dolist (file files)
-      (if-let ((existing_buf (find-buffer-visiting file))
-               (unmodified t))
-          ;; Don't consider files that are being modified
-          (if (buffer-modified-p existing_buf)
-              ;; TODO: don't remove from inventory, but mark it as being modified
-              ;; We keep it in inventory so as to be able to link to it if it has a valid ID.
-              (puthash file (plist-put (gethash file inventory) :modified t) inventory)
-            (setq unmodified nil))
-        (unless (and existing_buf (not unmodified))
-          (org-roam-logseq--with-temp-buffer file
-            ;; Populate inventory information
-            (let ((props (gethash file inventory)))
-              (setq props (org-roam-logseq--buffer-props props inventory))
-              (puthash file props inventory))))))
+      (org-roam-logseq--with-temp-buffer file
+        ;; Populate inventory information
+        (let* ((plist (gethash file inventory))
+               (new_plist (org-roam-logseq--buffer-props plist inventory)))
+          (puthash file new_plist inventory))))
     inventory))
 
 (defun org-roam-logseq--image-file-p (file)
   "Non-nil if FILE is a supported image type."
   ;; This function exists purely because `image-supported-file-p' has made
   ;; `image-type-from-file-name' obsolete since Emacs 29.1; while it is not
-  ;; supported by `compat'. So `image-type-available-p' is just copied here
+  ;; supported by `compat'.  So `image-type-available-p' is just copied here
   ;;
   ;; The function below is a copy from `image.el' distributed with Emacs version
   ;; 29.1.  Copyright (C) 1998-2023 Free Software Foundation, Inc.
@@ -662,17 +685,17 @@ nil: parse only files that are not yet indexed (by `org-roam')
   and does not create any new files (when it encounters a link
   created by Logseq without an existing target).
 
-\='(4) or 4 or \='force: parse all files (even those already
+\\='(4) or 4 or \\='force: parse all files (even those already
   indexed) and does not create any new files.  Equivalent to
   \\[universal-argument] \\[org-roam-logseq].
 
-\='(16) or 16 or \='create: parse only files that are not yet
+\\='(16) or 16 or \\='create: parse only files that are not yet
   indexed and create new files using your capture templates (when
   it encounters a Logseq link without target).  Equivalent to
   \\[universal-argument] \\[universal-argument]
   \\[org-roam-logseq].
 
-\='(64) or 64 or \='force-create: parse all files and create new
+\\='(64) or 64 or \\='force-create: parse all files and create new
   files using your capture templates.  Equivalent to
   \\[universal-argument] \\[universal-argument]
   \\[universal-argument] \\[org-roam-logseq].

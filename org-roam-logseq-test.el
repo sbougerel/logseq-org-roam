@@ -36,22 +36,67 @@
 
 (require 'org-roam-logseq)
 
-(ert-deftest org-roam-logseq--inventory-indexed ()
+(ert-deftest org-roam-logseq--inventory-init ()
   ;; `org-roam-logseq--files-not-cached' find the difference between
   ;; `org-roam-list-files' and the files present in the org-roam cache which
   ;; we'll have to mock here.
+  (let ((result (org-roam-logseq--inventory-init '("a" "b" "c" "d"))))
+    (should (hash-table-p result))
+    (should (equal (hash-table-count result) 4))
+    (should (equal (gethash "a" result) '(:indexed nil)))
+    (should (equal (gethash "b" result) '(:indexed nil)))
+    (should (equal (gethash "c" result) '(:indexed nil)))
+    (should (equal (gethash "d" result) '(:indexed nil)))))
+
+(ert-deftest org-roam-logseq--inventory-from-cache ()
   (mocker-let
-   ((org-roam-db-query (q)
-                       ((:input '([:select file :from files])
-                         :output '(("a") ("d") ("e"))))))
-   (let ((result (org-roam-logseq--inventory-indexed '("a" "b" "c" "d"))))
-     (should (hash-table-p result))
-     (should (equal (hash-table-count result) 4))
-     (should (equal (gethash "a" result) '(:indexed t)))
-     (should (equal (gethash "b" result) '(:indexed nil)))
-     (should (equal (gethash "c" result) '(:indexed nil)))
-     (should (equal (gethash "d" result) '(:indexed t)))
-     )))
+   ((org-roam-db-query (sql &rest args)
+                       ((:input '([:select [file id title]
+                                   :from nodes    
+                                   :where (= 0 level)])
+                                :output '(("a" "x" "A") ("d" "y" "D")))
+                        (:input '([:select [alias]
+                                   :from aliases
+                                   :where (= node-id $s1)]
+                                  "x")
+                                :output nil)
+                        (:input '([:select [alias]
+                                   :from aliases
+                                   :where (= node-id $s1)]
+                                  "y")
+                                :output '(("e"))))))
+   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b" "c" "d"))))
+     (org-roam-logseq--inventory-from-cache inventory)
+     (should (hash-table-p inventory))
+     (should (equal (hash-table-count inventory) 4))
+     (should (equal (gethash "a" inventory) '(:indexed t
+                                              :id-p t
+                                              :id "x"
+                                              :title-p t
+                                              :title "A"
+                                              :aliases nil)))
+     (should (equal (gethash "b" inventory) '(:indexed nil)))
+     (should (equal (gethash "c" inventory) '(:indexed nil)))
+     (should (equal (gethash "d" inventory) '(:indexed t
+                                              :id-p t
+                                              :id "y"
+                                              :title-p t
+                                              :title "D"
+                                              :aliases ("e")))))))
+
+(ert-deftest org-roam-logseq--inventory-mark-modified ()
+  (mocker-let
+   ((find-buffer-visiting (f) ((:input '("a") :output 'a)
+                               (:input '("b") :output nil)))
+    (buffer-modified-p (b) ((:input '(a) :output t))))
+   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b"))))
+     (org-roam-logseq--inventory-mark-modified inventory)
+     (should (hash-table-p inventory))
+     (should (equal (hash-table-count inventory) 2))
+     (should (equal (gethash "a" inventory)
+                    '(:indexed nil :modified t)))
+     (should (equal (gethash "b" inventory)
+                    '(:indexed nil))))))
 
 (ert-deftest org-roam-logseq--buffer-props--empty ()
   (with-temp-buffer
