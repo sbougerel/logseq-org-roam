@@ -440,7 +440,7 @@ The plist contains the following properties:
     nil)
    (t
     (let ((section (caddr data)))
-      ;; Search for properties drawer (there can only be one, afaict)
+      ;; Search for properties drawer
       (org-element-map section 'property-drawer
         (lambda (property-drawer)
           (setq plist (plist-put plist :property-p t))
@@ -494,9 +494,9 @@ The plist contains the following properties:
                                        (org-element-property :value keyword))
                                       "\\s-*,\\s-*")))))))))))
   ;; Settle missing values
-  (unless (plist-member plist :id-p)
+  (unless (plist-member plist :id)
     (setq plist (plist-put plist :id (org-id-new))))
-  (unless (plist-member plist :title-p)
+  (unless (plist-member plist :title)
     (setq plist (plist-put plist :title (file-name-sans-extension
                                          (file-name-base
                                           (buffer-file-name (buffer-base-buffer)))))))
