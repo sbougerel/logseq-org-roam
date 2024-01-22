@@ -103,45 +103,43 @@
 (ert-deftest org-roam-logseq--parse-buffer--empty ()
   (with-temp-buffer
     (insert "")
-    (let ((fake-inventory (make-hash-table :test #'equal)))
-      (delay-mode-hooks
-        (let ((org-inhibit-startup t))
-          (org-mode)
-          (mocker-let
-           ((buffer-file-name (&optional b)
-                              ((:input '(nil) :output "dir/note.org")))
-            (org-id-new ()
-                        ((:output "123456789"))))
-           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil) fake-inventory))
-                 (expected '(:cache-p nil
-                             :id-p nil
-                             :id "123456789"
-                             :title-p nil
-                             :title "note"
-                             :links nil)))
-             (should (equal actual expected)))))))))
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (mocker-let
+         ((buffer-file-name (&optional b)
+                            ((:input '(nil) :output "dir/note.org")))
+          (org-id-new ()
+                      ((:output "123456789"))))
+         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil)))
+               (expected '(:cache-p nil
+                           :id-p nil
+                           :id "123456789"
+                           :title-p nil
+                           :title "note"
+                           :links nil)))
+           (should (equal actual expected))))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--simple ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 *")
-    (let ((fake-inventory (make-hash-table :test #'equal)))
-      (delay-mode-hooks
-        (let ((org-inhibit-startup t))
-          (org-mode)
-          (mocker-let
-           ((buffer-file-name (&optional b)
-                              ((:input '(nil) :output "dir/note.org")))
-            (org-id-new ()
-                        ((:output "123456789"))))
-           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil) fake-inventory))
-                 (expected '(:cache-p nil
-                             :id-p nil
-                             :id "123456789"
-                             :title-p nil
-                             :title "note"
-                             :links nil)))
-             (should (equal actual expected)))))))))
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (mocker-let
+         ((buffer-file-name (&optional b)
+                            ((:input '(nil) :output "dir/note.org")))
+          (org-id-new ()
+                      ((:output "123456789"))))
+         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil)))
+               (expected '(:cache-p nil
+                           :id-p nil
+                           :id "123456789"
+                           :title-p nil
+                           :title "note"
+                           :links nil)))
+           (should (equal actual expected))))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--heading-id ()
   (with-temp-buffer
@@ -150,23 +148,22 @@
 :ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 *")
-    (let ((fake-inventory (make-hash-table :test #'equal)))
-      (delay-mode-hooks
-        (let ((org-inhibit-startup t))
-          (org-mode)
-          (mocker-let
-           ((buffer-file-name (&optional b)
-                              ((:input '(nil) :output "dir/note.org")))
-            (org-id-new ()
-                        ((:output "123456789"))))
-           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil) fake-inventory))
-                 (expected '(:cache-p nil
-                             :id-p nil
-                             :id "123456789"
-                             :title-p nil
-                             :title "note"
-                             :links nil)))
-             (should (equal actual expected)))))))))
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (mocker-let
+         ((buffer-file-name (&optional b)
+                            ((:input '(nil) :output "dir/note.org")))
+          (org-id-new ()
+                      ((:output "123456789"))))
+         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil)))
+               (expected '(:cache-p nil
+                           :id-p nil
+                           :id "123456789"
+                           :title-p nil
+                           :title "note"
+                           :links nil)))
+           (should (equal actual expected))))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--aliases ()
   (with-temp-buffer
@@ -177,19 +174,18 @@
 #+title: Note
 #+alias: a, B, c d, e
 *")
-    (let ((fake-inventory (make-hash-table :test #'equal)))
-      (delay-mode-hooks
-        (let ((org-inhibit-startup t))
-          (org-mode)
-          (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t) fake-inventory))
-                (expected '(:cache-p t
-                            :id-p t
-                            :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                            :title-p t
-                            :title "Note"
-                            :aliases ("b" "e")
-                            :links nil)))
-            (should (equal actual expected))))))))
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t)))
+              (expected '(:cache-p t
+                          :id-p t
+                          :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
+                          :title-p t
+                          :title "Note"
+                          :aliases ("b" "e")
+                          :links nil)))
+          (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--links ()
   (with-temp-buffer
@@ -219,24 +215,24 @@ A [[#some-custom-id]] link.
 A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
-    (let ((fake-inventory (make-hash-table :test #'equal)))
-      (puthash "dir/logseq.org" '(:cache-p t) fake-inventory)
-      (puthash "dir/note.org" '(:cache-p nil) fake-inventory)
-      (delay-mode-hooks
-        (let ((org-inhibit-startup t))
-          (org-mode)
-          (mocker-let
-           ((expand-file-name (p)
-                              ((:input '("dir/note.org") :output-generator #'identity))))
-           (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t) fake-inventory))
-                 (expected '(:cache-p t
-                             :id-p t
-                             :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                             :title-p t
-                             :title "Test note"
-                             :links ((file 400 427 "dir/note.org" "[[file:dir/note.org][note]]")
-                                     (title 288 299 "logseq" "[[Logseq]] ")))))
-             (should (equal actual expected)))))))))
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        ;; TODO: HERE need to mock org-roam-file-p
+        (mocker-let
+         ((org-roam-logseq--expand-file (p)
+                                        ((:input '("dir/note.org") :output-generator #'identity)))
+          (org-roam-logseq--file-p (p)
+                                   ((:input '("dir/note.org") :output t :max-occur 2))))
+         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t)))
+               (expected '(:cache-p t
+                           :id-p t
+                           :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
+                           :title-p t
+                           :title "Test note"
+                           :links ((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")
+                                   (title 288 298 "Logseq" nil "[[Logseq]]")))))
+           (should (equal actual expected))))))))
 
 (ert-deftest org-roam-logseq--reverse-map--with-conflicts ()
   (let ((fake-inventory (make-hash-table :test #'equal)))
@@ -271,16 +267,16 @@ A [[test links]] matching headline.
                      '(t t t))))))
 
 (ert-deftest org-roam-logseq--filter-links ()
-  (let ((links '((file 10 11 "a" "[[file:a][A]]")
-                 (title 1 2 "b" "[[B]] ")))
+  (let ((links '((file 10 11 "a" "A" "[[file:a][A]]")
+                 (title 1 2 "B" nil "[[B]]")))
         (inventory (make-hash-table :test #'equal))
         (reverse-map (make-hash-table :test #'equal)))
     (puthash "a" '(:id "x") inventory)
     (puthash "b" '(:id "y") inventory)
     (puthash "b" "b" reverse-map)
     (let ((actual (org-roam-logseq--filter-links links inventory reverse-map))
-          (expected '((file 10 11 "a" "[[file:a][A]]" "x")
-                      (title 1 2 "b" "[[B]] " "y"))))
+          (expected '((file 10 11 "a" "A" "[[file:a][A]]" "x")
+                      (title 1 2 "B" nil "[[B]]" "y"))))
       (should (equal actual expected)))))
 
 (ert-deftest org-roam-logseq--update-links ()
@@ -311,8 +307,8 @@ A [[#some-custom-id]] link.
 A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
-    (let* ((links '((file 400 427 "dir/note.org" "[[file:dir/note.org][note]]" "A")
-                    (title 288 299 "logseq" "[[Logseq]] " "B")))
+    (let* ((links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]" "A")
+                    (title 288 298 "Logseq" nil "[[Logseq]]" "B")))
            (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
@@ -375,8 +371,8 @@ A [[test links]] matching headline.
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (let* ((links '((file 400 427 "dir/note.org" "[[file:dir/note.org][note]]" "A")
-                        (title 288 299 "logseq" "[[Logseq]] " "B")))
+        (let* ((links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]" "A")
+                        (title 288 298 "Logseq" nil "[[Logseq]]" "B")))
                (result (buffer-string)) ;; unchanged
                (expected 'mismatch)
                (actual (org-roam-logseq--update-links links)))

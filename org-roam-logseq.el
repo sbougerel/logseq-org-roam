@@ -114,7 +114,71 @@
 Valid values are:
 - \\='files
 - \\='fuzzy
-- \\='both")
+- \\='both
+
+You should customize this value based on your
+\":org-mode/insert-file-link?\" setting in Logseq.  Values other
+than \\='both save some processing time.
+
+Links considered as candidates to be converted to `org-roam'
+ID links are of 2 types:
+
+- File links such as:
+  [[file:path/to/pages/page.org][DESCRIPTION]].
+- Fuzzy links such as [[TITLE-OR-ALIAS][DESCRIPTION]].
+
+
+Matching rules are as follows.
+
+When dealing with file links, `org-roam-logseq' ignores links
+that do not contain a description since Logseq always populates
+it when referencing another page.  It also ignores links that
+contain search options since Logseq does not create those.  It
+takes into account that all file paths are downcased.  And
+finally it discards any links that is not a link to an `org-roam'
+file (since these are not convertible).
+
+When dealing with fuzzy links, it first ignores dedicated internal
+link formats that have specific meaning in `org-mode' (even if
+they are broken):
+
+- [[#custom-id]] links,
+- [[*heading]] links,
+- [[(coderef)]] links,
+- [[image.jpg]] inline links to images,
+
+Of the remaining fuzzy links, it discards links that match
+internally (as per `org-mode' rules) with:
+
+ - <<targets>> or,
+ - #+name: named elements or,
+ - a headline by text search,
+
+The leftover links are the candidates to be converted to
+`org-roam' external ID links.
+
+
+Notes on using file links in Logseq.
+
+It is usually recommended to set \":org-mode/insert-file-link?\"
+to true in Logseq, presumably to ensure the correct target is
+being pointed to.
+
+Unfortunately, Logseq does not always provide a correct path (as
+of version 0.10.3) on platforms tested (Android, Linux).  TODO:
+replace following by a bug report and link it.
+
+When a note does not exist yet (or when it is aliased, see
+`https://github.com/logseq/logseq/issues/9342'), the path
+provided by Logseq is an incorrect concatenation of a relative
+parent '../' to an absolute path to the root of the graph.
+Logseq does not fix this path, even after the page is created.
+The user must fix it manually each time.
+
+On the other hand `org-roam-logseq' cares to implement the
+complex matching rules set by `org-roam' to convert the right
+fuzzy links, making Logseq and `org-roam' mostly interoperable
+even when using fuzzy links in Logseq.")
 
 (defvar org-roam-logseq-capture-template "d"
   "Key of the `org-roam' capture template to use.")
@@ -199,6 +263,10 @@ previously created."
      (insert-file-contents ,file)
      ,@body))
 
+;; Aliased for mocking: remapping `expand-file-name' is dangerous
+(defalias 'org-roam-logseq--expand-file #'expand-file-name)
+(defalias 'org-roam-logseq--file-p #'org-roam-file-p)
+
 (defun org-roam-logseq--inventory-init (files)
   "Initialise inventory with FILES.
 The path of each file is downcased, since Logseq is
@@ -266,11 +334,11 @@ Return the number of files that were parsed."
                     (plist-get plist :cache-p))
           (setq count (1+ count))
           (org-roam-logseq--with-temp-buffer file
-                                             (let ((new_plist (plist-put plist :hash
-                                                                         (secure-hash 'sha256 (current-buffer)))))
-                                               (setq new_plist
-                                                     (org-roam-logseq--parse-buffer new_plist inventory))
-                                               (puthash downcased new_plist inventory))))))
+            (let ((new_plist (plist-put plist :hash
+                                        (secure-hash 'sha256 (current-buffer)))))
+              (setq new_plist
+                    (org-roam-logseq--parse-buffer new_plist))
+              (puthash downcased new_plist inventory))))))
     count))
 
 (defun org-roam-logseq--inventory-all (&optional force)
@@ -343,16 +411,19 @@ The plist contains the following properties:
                    (image-type-available-p (setq type (cdr elem))))
 	  (throw 'found type))))))
 
-(defun org-roam-logseq--parse-buffer (plist inventory)
-  "Update PLIST based on INVENTORY and current buffer's content.
+(defun org-roam-logseq--parse-buffer (plist)
+  "Return updated PLIST based on current buffer's content.
 This function updates PLIST with the following properties:
 
-- `:title-p' t if the file already has a title
-- `:id-p' t if the file already has an ID
-- `:id' the org ID for the file (`org-id-new' otherwise)
-- `:title' the title for the file (from file's name otherwise)
-- `:aliases' the list of (top-level) *Logseq* aliases #+ALIAS: ...
-- `:links' lists Logseq links present in the file
+- `:tofp-p' t if top of file has properties
+- `:id-p' t if top of file has an ID property
+- `:id' the ID found in the file or gotten from `org-id-new'
+- `:title-p' t if the file has a title
+- `:title' the title of the file or from file's name
+- `:aliases' the list of (top-level) Logseq aliases '#+ALIAS': ...
+- `:links' lists all Logseq links candidates for conversion
+- (optional) `:id-point' the point where id should be inserted
+- (optional) `:title-point' the point where title should be inserted
 
 Only Logseq #+ALIAS keywords that do not have an equivalent in
 :ROAM_ALIASES: are inventoried.  The program will attempt to
@@ -360,64 +431,8 @@ create corresponding :ROAM_ALIASES: for every #+ALIAS (but not
 the reverse).
 
 The last property `:links' is a list ((TYPE BEG END TITLE MATCH)
-...) of Logseq-like links (equivalant to internal fuzzy links in
-`org-mode').  These links are candidates to be translasted to
-external ID links, if they match an `org-roam' file (not done in
-this function).
-
-Link extracted are generally, of 2 types:
-
-- File links without search options (Logseq does not create
-  these) such as: [[file:path/to/org/roam][DESCRIPTION]]
-
-- Fuzzy links that do not match with an internal target (read
-  below for details)
-
-`org-mode' internal links have complex matching rules (Read
-https://orgmode.org/manual/Hyperlinks.html for a details on the
-different types of links).  This is why it is usually recommended
-to set \":org-mode/insert-file-link?\" to true in Logseq.
-
-Unfortunately, Logseq does not always provide a correct path (as
-of version 0.10.3) on platforms tested (Android, Linux).  When a
-note does not exist yet or is aliased, the path provided by
-Logseq is a grabled concatenation of a relative parent '../' to
-an absolute path.  Logseq does not fix this path, even after the
-page is created.  Since this use case is common, using this
-feature makes things worse for `org-mode'.  When the path is
-correctly provided, it is always downcased in the link (not on
-disk).  This is something we have to take into consideration
-therefore, when matching to another file.
-
-The heurisitc used in this function is designed to make Logseq
-and `org-roam' mostly interoperable, without compromising much on
-each of their functionalities, *even when using internal
-links* (i.e. keeping \":org-mode/insert-file-link? false\") in
-Logseq which is what the author currently reverted to.
-
-
-When dealing with file links, it ignores links that do not
-contain a description, since Logseq always populates it when
-referencing another file.
-
-When dealing with internal links, it ignores dedicated internal
-link formats that have specific meaning in `org-mode' (even if
-they are broken):
-
-- [[#custom-id]] links,
-- [[*heading]] links,
-- [[(coderef)]] links,
-- [[image.jpg]] inline links to images,
-
-Of the remaining fuzzy links, it discards links that match in the
-buffer with:
-
- - <<targets>> or,
- - #+name: named elements or,
- - a headline by text search,
-
-The leftover links are the candidates to be converted to
-`org-roam' external ID links."
+...) of potential Logseq links candidates to be translasted to
+external ID links."
   (org-with-wide-buffer
    (let ((data (org-element-parse-buffer))
          (text-targets (make-hash-table :test #'equal))
@@ -425,9 +440,16 @@ The leftover links are the candidates to be converted to
      ;; Gather relevant information
      (org-element-map data (append '(link target keyword node-property headline) org-roam-logseq--named)
        (lambda (element)
-         (let ((type (org-element-type element))
-               (begin (org-element-property :begin element))
-               (end (org-element-property :end element)))
+         ;; TODO: The new way of doing, with catch, and each element updating plist or others as they go!
+         ;; Start by initializing element types with corresponding variables, then:
+         ;; (catch 'processed
+         ;;   (setq plist (org-roam-logseq--parse-common element plist))
+         ;;   (org-roam-logseq--parse-for))
+         ;;   )
+         ;; Finally run with element "nil" to signal the end of the parsing
+         ;;   (setq plist (org-roam-logseq--parse-common nil plist))
+         ;; Use plist to store states in between calls, until the nil call.
+         (let ((type (org-element-type element)))
            (if-let ((name (org-element-property :name element)))
                ;; Org-mode searches are case incensitive
                (puthash (downcase name) t text-targets))
@@ -435,8 +457,8 @@ The leftover links are the candidates to be converted to
             ;; See org-link-search to understand what fuzzy link point to
             ;; TODO: simplify fragment with chaining/dispatch?
             ;; TODO: inline parent functions?
-            ;; TODO: don't gather data from elements when not needed, e.g. begin/end
             ;; TODO: Use cl-struct over plist?
+            ;; TODO: split FILE and TITLE processing
             ((eq type 'headline)
              (puthash (downcase
                        ;; TODO: remove internal function dependency
@@ -452,23 +474,30 @@ The leftover links are the candidates to be converted to
                         ;; When the link has no content, ignore image types
                         (and (not content)
                              (org-roam-logseq--image-file-p path)))
-                 (push `(title ,begin ,end ,(downcase path)
-                         ,(buffer-substring-no-properties begin end))
-                       links))))
+                 (let* ((descr (if content
+                                   (buffer-substring-no-properties
+                                    (org-element-property :contents-begin element)
+                                    (org-element-property :contents-end element))))
+                        (begin (org-element-property :begin element))
+                        (end (- (org-element-property :end element)
+                                (org-element-property :post-blank element)))
+                        (raw (buffer-substring-no-properties begin end)))
+                   (push `(title ,begin ,end ,path ,descr, raw) links)))))
             ((and (eq type 'link)
                   (equal (org-element-property :type element) "file")
                   (org-element-property :contents-begin element)
                   (not (org-element-property :search-option element)))
              (let* ((path (org-element-property :path element))
-                    (true-path (expand-file-name path)))
-               (when (gethash true-path inventory)
-                 (push `(file ,begin ,end
-                         ;; No need to downcase path here, either it's created
-                         ;; by Logseq, and it's downcased, OR it's not, in which
-                         ;; case we want to keep that link as it is.
-                         ,path
-                         ,(buffer-substring-no-properties begin end))
-                       links))))
+                    (true-path (org-roam-logseq--expand-file path)))
+               (when (org-roam-logseq--file-p true-path)
+                 (let* ((descr (buffer-substring-no-properties
+                                (org-element-property :contents-begin element)
+                                (org-element-property :contents-end element)))
+                        (begin (org-element-property :begin element))
+                        (end (- (org-element-property :end element)
+                                (org-element-property :post-blank element)))
+                        (raw (buffer-substring-no-properties begin end)))
+                   (push `(file ,begin ,end ,path ,descr ,raw) links)))))
             ((eq type 'target)
              (puthash (downcase (org-element-property :value element)) t text-targets))
             ;; Deal with top-level keywords
@@ -558,13 +587,13 @@ return a list sorted by reverse position: last links will be
 converted first to avoid computing point movements between
 updates."
   (let (convert)
-    (pcase-dolist (`(,type ,beg ,end ,tgt ,raw) links)
+    (pcase-dolist (`(,type ,beg ,end ,tgt ,descr ,raw) links)
       (if-let* ((path (if (eq 'file type) tgt
-                        (gethash tgt reverse_map)))
+                        (gethash (downcase tgt) reverse_map)))
                 (props (gethash path inventory)))
           ;; This is a link to a known file, convert it
           (let ((id (plist-get props :id)))
-            (push `(,type ,beg ,end ,tgt ,raw ,id) convert))))
+            (push `(,type ,beg ,end ,tgt ,descr ,raw ,id) convert))))
     (sort convert (lambda (a b) (> (nth 1 a) (nth 1 b))))))
 
 (defun org-roam-logseq--update-links (links)
@@ -576,32 +605,22 @@ updating the buffer."
   ;; visit.)
   ;; TODO: Compute buffer secure hash instead.
   (catch 'fault
-    (pcase-dolist (`(,_ ,beg ,end ,_ ,raw, _) links)
+    (pcase-dolist (`(_ ,beg ,end _ _ ,raw _) links)
       (unless (equal (buffer-substring-no-properties beg end) raw)
         (throw 'fault 'mismatch)))
     ;; Past this point, attempt to update all links
-    (pcase-dolist (`(,_ ,beg ,end ,_ ,_, id) links)
+    (pcase-dolist (`(_ ,beg ,end ,path ,descr _ ,id) links)
       (save-excursion
-        (goto-char beg)
         (save-restriction
           (narrow-to-region beg end)
+          (goto-char beg)
           (save-match-data
-            ;; If it fails here, buffer is killed/reverted without saving
-            ;; TODO: use element's data instead: it's already parsed!
-            (if (not (re-search-forward org-link-bracket-re nil t))
-                (throw 'fault 'link-re-mismatch)
-              (goto-char (match-beginning 1))
-              ;; 'file links are matched only when description is not empty, so
-              ;; we can be sure we only need to replace the first match group.
-              ;; 'title links may or may not have a description.  If there is a
-              ;; description, we replace the first match group; if there isn't
-              ;; we insert '[id:UUID]' just before the first match group.
-              (if (match-beginning 2)
-                  (progn
-                    (delete-region (match-beginning 1) (match-end 1))
-                    (insert (concat "id:" id)))
-                (backward-char) ;; at "["
-                (insert (concat "[id:" id "]"))))))))
+            ;; We already confirmed it matches... let's destroy:
+            (delete-region beg end)
+            (if descr
+                (insert (concat "[[id:" id "][" descr "]]"))
+              ;; Path links always have a description, path below is necessary a title
+              (insert (concat "[[id:" id "][" path "]]")))))))
     t))
 
 (defun org-roam-logseq--update-top (id title aliases)
@@ -652,13 +671,13 @@ TODO: better descriptions."
                    (not (plist-get :id-p props)))
            ;; There's updates to perform, load the file in an org buffer
            (org-roam-logseq--with-edit-buffer file
-                                              (org-roam-logseq--update-links update_links)
-                                              (org-roam-logseq--update-top
-                                               (unless (plist-get :id-p props) (plist-get :id props))
-                                               (unless (plist-get :title-ed props) (plist-get :title props))
-                                               (plist-get :aliases props))
-                                              ;; Updates done, time to save the buffer
-                                              ))))
+             (org-roam-logseq--update-links update_links)
+             (org-roam-logseq--update-top
+              (unless (plist-get :id-p props) (plist-get :id props))
+              (unless (plist-get :title-ed props) (plist-get :title props))
+              (plist-get :aliases props))
+             ;; Updates done, time to save the buffer
+             ))))
      inventory)))
 
 (defun org-roam-logseq--start (force create)
