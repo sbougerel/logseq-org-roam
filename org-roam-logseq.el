@@ -109,12 +109,17 @@
 (require 'org)
 (require 'org-roam)
 
-(defvar org-roam-logseq-link-types 'both
-  "Types of links `org-roam-logseq' should convert.
-Valid values are:
+(defgroup org-roam-logseq nil
+  "Convert Logseq files to `org-roam' files."
+  :group 'org-roam)
+
+;;;###autoload (put 'org-roam-logseq-link-types 'safe-local-variable #'symbolp)
+(defcustom org-roam-logseq-link-types 'both
+  "The kind of links `org-roam-logseq' should convert.
+Value is a symbol, only the following are recognized:
 - \\='files
 - \\='fuzzy
-- \\='both
+- \\='both (default, if unrecognized)
 
 You should customize this value based on your
 \":org-mode/insert-file-link?\" setting in Logseq.  Values other
@@ -128,15 +133,15 @@ ID links are of 2 types:
 - Fuzzy links such as [[TITLE-OR-ALIAS][DESCRIPTION]].
 
 
-Matching rules are as follows.
+Matching rules for each kind of links are as follows.
 
 When dealing with file links, `org-roam-logseq' ignores links
 that do not contain a description since Logseq always populates
 it when referencing another page.  It also ignores links that
-contain search options since Logseq does not create those.  It
-takes into account that all file paths are downcased.  And
+contain search options since Logseq does not create those.  And
 finally it discards any links that is not a link to an `org-roam'
-file (since these are not convertible).
+file (since these are not convertible to ID links), taking into
+account that file paths are downcased.
 
 When dealing with fuzzy links, it first ignores dedicated internal
 link formats that have specific meaning in `org-mode' (even if
@@ -178,10 +183,22 @@ The user must fix it manually each time.
 On the other hand `org-roam-logseq' cares to implement the
 complex matching rules set by `org-roam' to convert the right
 fuzzy links, making Logseq and `org-roam' mostly interoperable
-even when using fuzzy links in Logseq.")
+even when using fuzzy links in Logseq."
+  :type 'symbol
+  :options '(fuzzy file both)
+  :group 'org-roam-logseq)
 
-(defvar org-roam-logseq-capture-template "d"
-  "Key of the `org-roam' capture template to use.")
+;;;###autoload (put 'org-roam-logseq-capture-template 'safe-local-variable #'stringp)
+(defcustom org-roam-logseq-capture-template "d"
+  "Key of the `org-roam' capture template to use."
+  :type 'string
+  :group 'org-roam-logseq)
+
+;;;###autoload
+(defcustom org-roam-logseq-updated-hook nil
+  "Hook called  by `org-roam-logseq' if any files was updated."
+  :type 'hook
+  :group 'org-roam-logseq)
 
 (defconst org-roam-logseq--named
   '(babel-call
@@ -272,8 +289,7 @@ previously created."
 The path of each file is downcased, since Logseq is
 case-insensitive when performing file search."
   (let ((inventory (make-hash-table :test #'equal)))
-    (mapc (lambda (elem) (puthash (downcase elem)
-                                  (list :cache-p nil) inventory))
+    (mapc (lambda (elem) (puthash (downcase elem) nil inventory))
           files)
     inventory))
 
@@ -287,19 +303,18 @@ cache."
                                          :where (= 0 level)])))
     (pcase-dolist (`(,file ,id ,title) data-cached)
       ;; TODO: Consider throwing an error if cache is not updated
-      (when (gethash (downcase file) inventory)
+      (unless (eq 'not-found (gethash (downcase file) inventory 'not-found))
         (setq count (1+ count))
         (let ((aliases (mapcar #'car
                                (org-roam-db-query [:select [alias] :from aliases
                                                    :where (= node-id $s1)]
                                                   id))))
           (puthash (downcase file)
-                   (list :cache-p t
-                         :id-p t
-                         :id id
-                         :title-p t
-                         :title title
-                         :aliases aliases)
+                   (append (list :cache-p t :id-p t :id id)
+                           (if (and title (not (string-empty-p title)))
+                               (list :title-p t :title title))
+                           (if aliases
+                               (list :aliases aliases)))
                    inventory))))
     count))
 
@@ -411,6 +426,82 @@ The plist contains the following properties:
                    (image-type-available-p (setq type (cdr elem))))
 	  (throw 'found type))))))
 
+(defun org-roam-logseq--parse-first-section (data plist)
+  "Return updated PLIST based on first section of DATA."
+  (declare (pure t) (side-effect-free t))
+  (cond
+   ((or (not (consp data))
+        (not (eq 'org-data (car data))))
+    (throw 'failure 'invalid-ast))
+   ((or (not (cddr data))
+        (not (consp (caddr data)))
+        (not (eq 'section (caaddr data))))
+    ;; no content or no first section
+    nil)
+   (t
+    (let ((section (caddr data)))
+      ;; Search for properties drawer (there can only be one, afaict)
+      (org-element-map section 'property-drawer
+        (lambda (property-drawer)
+          (setq plist (plist-put plist :property-p t))
+          (setq plist (plist-put plist :title-point
+                                 (progn
+                                   (goto-char
+                                    (- (org-element-property :end
+                                                             property-drawer)
+                                       (org-element-property :post-blank
+                                                             property-drawer)))
+                                   (beginning-of-line)
+                                   (point))))
+          (org-element-map property-drawer 'node-property
+            (lambda (node-property)
+              (let ((key (org-element-property :key node-property)))
+                (cond
+                 ;; TODO: handle case where the property is present but empty
+                 ((equal "ID" key)
+                  (setq plist (plist-put plist :id-p t))
+                  (setq plist (plist-put plist :id
+                                         (org-element-property :value
+                                                               node-property))))
+                 ((equal "ROAM_ALIASES" key)
+                  (setq plist (plist-put plist :roam-aliases
+                                         (split-string-and-unquote
+                                          (downcase
+                                           (org-element-property
+                                            :value
+                                            node-property))))))))))
+          ;; Record point where ID should be inserted
+          (unless (plist-member plist :id-p)
+            (setq plist (plist-put plist :id-point
+                                   (progn
+                                     (goto-char
+                                      (org-element-property :begin property-drawer))
+                                     (forward-line)
+                                     (beginning-of-line)
+                                     (point)))))))
+      (org-element-map section 'keyword
+        (lambda (keyword)
+          (let ((key (org-element-property :key keyword)))
+            (cond
+             ;; TODO: handle case where the keyword is present but empty
+             ((equal "TITLE" key)
+              (setq plist (plist-put plist :title-p t))
+              (setq plist (plist-put plist :title (org-element-property :value keyword))))
+             ((equal "ALIAS" key)
+              (setq plist (plist-put plist :aliases
+                                     (split-string
+                                      (downcase
+                                       (org-element-property :value keyword))
+                                      "\\s-*,\\s-*")))))))))))
+  ;; Settle missing values
+  (unless (plist-member plist :id-p)
+    (setq plist (plist-put plist :id (org-id-new))))
+  (unless (plist-member plist :title-p)
+    (setq plist (plist-put plist :title (file-name-sans-extension
+                                         (file-name-base
+                                          (buffer-file-name (buffer-base-buffer)))))))
+  plist)
+
 (defun org-roam-logseq--parse-buffer (plist)
   "Return updated PLIST based on current buffer's content.
 This function updates PLIST with the following properties:
@@ -436,7 +527,9 @@ external ID links."
   (org-with-wide-buffer
    (let ((data (org-element-parse-buffer))
          (text-targets (make-hash-table :test #'equal))
-         id title roam_aliases aliases links)
+         links)
+     (catch 'failure
+       (setq plist (org-roam-logseq--parse-first-section data plist)))
      ;; Gather relevant information
      (org-element-map data (append '(link target keyword node-property headline) org-roam-logseq--named)
        (lambda (element)
@@ -456,8 +549,6 @@ external ID links."
            (cond
             ;; See org-link-search to understand what fuzzy link point to
             ;; TODO: simplify fragment with chaining/dispatch?
-            ;; TODO: inline parent functions?
-            ;; TODO: Use cl-struct over plist?
             ;; TODO: split FILE and TITLE processing
             ((eq type 'headline)
              (puthash (downcase
@@ -499,44 +590,7 @@ external ID links."
                         (raw (buffer-substring-no-properties begin end)))
                    (push `(file ,begin ,end ,path ,descr ,raw) links)))))
             ((eq type 'target)
-             (puthash (downcase (org-element-property :value element)) t text-targets))
-            ;; Deal with top-level keywords
-            ((and (eq type 'keyword)
-                  (eq (org-element-type (org-element-property :parent element)) 'section)
-                  (eq (org-element-property :mode (org-element-property :parent element)) 'first-section))
-             (cond
-              ((equal (org-element-property :key element) "TITLE")
-               (setq title (org-element-property :value element)))
-              ((equal (org-element-property :key element) "ALIAS")
-               (setq aliases
-                     (split-string (downcase (org-element-property :value element)) "\\s-*,\\s-*")))))
-            ;; Deal with top-level node-properties
-            ((and (eq type 'node-property)
-                  (eq (org-element-type (org-element-property :parent element)) 'property-drawer)
-                  (eq (org-element-type (org-element-property :parent (org-element-property :parent element))) 'section)
-                  (eq (org-element-property :mode (org-element-property :parent (org-element-property :parent element))) 'first-section))
-             (if (equal "ID" (org-element-property :key element))
-                 (setq id (org-element-property :value element)))
-             (if (equal "ROAM_ALIASES" (org-element-property :key element))
-                 (setq roam_aliases (split-string-and-unquote (downcase (org-element-property :value element))))))))))
-     ;; populate plist
-     (if (and id (not (string= id "")))
-         (progn
-           (setq plist (plist-put plist :id-p t))
-           (setq plist (plist-put plist :id id)))
-       (setq plist (plist-put plist :id-p nil))
-       (setq plist (plist-put plist :id (org-id-new))))
-     (if (and title (not (string= title "")))
-         (progn
-           (setq plist (plist-put plist :title-p t))
-           (setq plist (plist-put plist :title title)))
-       (setq plist (plist-put plist :title-p nil))
-       (setq plist (plist-put plist :title
-                              (file-name-sans-extension
-                               (file-name-base
-                                (buffer-file-name (buffer-base-buffer)))))))
-     (if-let ((logseq_aliases (seq-difference aliases roam_aliases)))
-         (setq plist (plist-put plist :aliases logseq_aliases)))
+             (puthash (downcase (org-element-property :value element)) t text-targets))))))
      ;; Filter out link that match targets, headlines or named elements
      (setq plist (plist-put plist :links
                             (seq-filter (lambda (link)
@@ -555,6 +609,7 @@ The function returns a reverse map of inventory."
   (let ((reverse_map (make-hash-table :test #'equal))
         (conflicts_map (make-hash-table :test #'equal))
         conflicts)
+    ;; TODO: take ROAM_ALIASES into account
     (maphash (lambda (key val)
                (let ((merged (append (list (downcase (plist-get val :title)))
                                      (plist-get val :aliases))))
@@ -603,8 +658,8 @@ updating the buffer."
   ;; First ensure that `raw' matches with the buffer's content for all links
   ;; (i.e. minimize chance that file was modified since our last
   ;; visit.)
-  ;; TODO: Compute buffer secure hash instead.
   (catch 'fault
+    ;; ...There's a tiny chance of hash collision.
     (pcase-dolist (`(_ ,beg ,end _ _ ,raw _) links)
       (unless (equal (buffer-substring-no-properties beg end) raw)
         (throw 'fault 'mismatch)))
@@ -662,22 +717,25 @@ TODO: better descriptions."
   (pcase-let ((`(,reverse_map ,_)
                (org-roam-logseq--reverse-map inventory)))
     (maphash
-     (lambda (file props)
+     (lambda (file plist)
        (let ((update_links (org-roam-logseq--filter-links
-                            (plist-get :links props) inventory reverse_map)))
+                            (plist-get :links plist) inventory reverse_map)))
          (when (or update_links
-                   (plist-get :aliases props)
-                   (not (plist-get :title-p props))
-                   (not (plist-get :id-p props)))
+                   (plist-get :aliases plist)
+                   (not (plist-get :title-p plist))
+                   (not (plist-get :id-p plist)))
            ;; There's updates to perform, load the file in an org buffer
            (org-roam-logseq--with-edit-buffer file
-             (org-roam-logseq--update-links update_links)
-             (org-roam-logseq--update-top
-              (unless (plist-get :id-p props) (plist-get :id props))
-              (unless (plist-get :title-ed props) (plist-get :title props))
-              (plist-get :aliases props))
-             ;; Updates done, time to save the buffer
-             ))))
+             (when (equal (plist-get :hash plist)
+                          (secure-hash 'sha256 (current-buffer)))
+               ;; TODO perform all verifications first
+               (org-roam-logseq--update-links update_links)
+               (org-roam-logseq--update-top
+                (unless (plist-get :id-p plist) (plist-get :id plist))
+                (unless (plist-get :title-ed plist) (plist-get :title plist))
+                (plist-get :aliases plist)))
+             ;; Updates done, time to save the buffer...
+             (save-buffer)))))
      inventory)))
 
 (defun org-roam-logseq--start (force create)
@@ -685,6 +743,7 @@ TODO: better descriptions."
   (princ
    (concat
     (format "* Ran %s\n" (format-time-string "%x at %X"))
+    (format "Using Org-roam directory: %s\n" org-roam-directory)
     "With flags:\n"
     (format "- ~force~ was: %s\n" force)
     (format "- ~create~ was: %s\n" create)
@@ -692,6 +751,15 @@ TODO: better descriptions."
     (format "- ~org-roam-logseq-link-types~: %S\n" org-roam-logseq-link-types)
     (format "- ~org-roam-logseq-capture-template~: %S\n" org-roam-logseq-capture-template)
     "\n")))
+
+(defun org-roam-logseq--sanity-check ()
+  "Check that `org-roam' is installed and configured."
+  (unless (featurep 'org-roam)
+    (error "`org-roam' is not installed"))
+  (unless org-roam-directory
+    (error "`org-roam-directory' is not set"))
+  (unless (file-directory-p org-roam-directory)
+    (error "`org-roam-directory' is not a directory")))
 
 ;;;###autoload
 (defun org-roam-logseq (&optional mode)
@@ -758,6 +826,7 @@ documentation string of `org-roam-logseq-link-types'.  To find
 out how `org-roam-logseq' uses your own capture templates, read
 the documentation string of `org-roam-logseq-capture'."
   (interactive "P")
+  (org-roam-logseq--sanity-check)
   (let (force_flag create_flag)
     (cond
      ((or (equal mode '(4))

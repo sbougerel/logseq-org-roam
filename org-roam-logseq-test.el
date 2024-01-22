@@ -43,10 +43,10 @@
   (let ((result (org-roam-logseq--inventory-init '("a" "b" "c" "d"))))
     (should (hash-table-p result))
     (should (equal (hash-table-count result) 4))
-    (should (equal (gethash "a" result) '(:cache-p nil)))
-    (should (equal (gethash "b" result) '(:cache-p nil)))
-    (should (equal (gethash "c" result) '(:cache-p nil)))
-    (should (equal (gethash "d" result) '(:cache-p nil)))))
+    (should (equal (gethash "a" result) nil))
+    (should (equal (gethash "b" result) nil))
+    (should (equal (gethash "c" result) nil))
+    (should (equal (gethash "d" result) nil))))
 
 (ert-deftest org-roam-logseq--inventory-from-cache ()
   (mocker-let
@@ -70,20 +70,19 @@
      (should (eq count 2))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 4))
-     (should (equal (gethash "a" inventory) '(:cache-p t
-                                              :id-p t
-                                              :id "x"
-                                              :title-p t
-                                              :title "A"
-                                              :aliases nil)))
-     (should (equal (gethash "b" inventory) '(:cache-p nil)))
-     (should (equal (gethash "c" inventory) '(:cache-p nil)))
-     (should (equal (gethash "d" inventory) '(:cache-p t
-                                              :id-p t
-                                              :id "y"
-                                              :title-p t
-                                              :title "D"
-                                              :aliases ("e")))))))
+     (should (equal (gethash "a" inventory 'not-found) '(:cache-p t
+                                                         :id-p t
+                                                         :id "x"
+                                                         :title-p t
+                                                         :title "A")))
+     (should (equal (gethash "b" inventory 'not-found) nil))
+     (should (equal (gethash "c" inventory 'not-found) nil))
+     (should (equal (gethash "d" inventory 'not-found) '(:cache-p t
+                                                         :id-p t
+                                                         :id "y"
+                                                         :title-p t
+                                                         :title "D"
+                                                         :aliases ("e")))))))
 
 (ert-deftest org-roam-logseq--inventory-mark-modified ()
   (mocker-let
@@ -95,10 +94,10 @@
      (should (eq actual 1))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 2))
-     (should (equal (gethash "a" inventory)
-                    '(:cache-p nil :modified-p t)))
-     (should (equal (gethash "b" inventory)
-                    '(:cache-p nil))))))
+     (should (equal (gethash "a" inventory 'not-found)
+                    '(:modified-p t)))
+     (should (equal (gethash "b" inventory 'not-found)
+                    nil)))))
 
 (ert-deftest org-roam-logseq--parse-buffer--empty ()
   (with-temp-buffer
@@ -111,11 +110,8 @@
                             ((:input '(nil) :output "dir/note.org")))
           (org-id-new ()
                       ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil)))
-               (expected '(:cache-p nil
-                           :id-p nil
-                           :id "123456789"
-                           :title-p nil
+         (let ((actual (org-roam-logseq--parse-buffer nil))
+               (expected '(:id "123456789"
                            :title "note"
                            :links nil)))
            (should (equal actual expected))))))))
@@ -132,11 +128,51 @@
                             ((:input '(nil) :output "dir/note.org")))
           (org-id-new ()
                       ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil)))
-               (expected '(:cache-p nil
-                           :id-p nil
+         (let ((actual (org-roam-logseq--parse-buffer nil))
+               (expected '(:id "123456789"
+                           :title "note"
+                           :links nil)))
+           (should (equal actual expected))))))))
+
+(ert-deftest org-roam-logseq--parse-buffer--title-only ()
+  (with-temp-buffer
+    (insert "#+title: Test note
+* Typical Logseq page
+*")
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (mocker-let
+         ((buffer-file-name (&optional b)
+                            ((:input '(nil) :output "dir/note.org")))
+          (org-id-new ()
+                      ((:output "123456789"))))
+         (let ((actual (org-roam-logseq--parse-buffer nil))
+               (expected '(:title-p t
+                           :title "Test note"
                            :id "123456789"
-                           :title-p nil
+                           :links nil)))
+           (should (equal actual expected))))))))
+
+(ert-deftest org-roam-logseq--parse-buffer--prop-only ()
+  (with-temp-buffer
+    (insert ":PROPERTIES:
+:ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
+:END:
+
+* Typical Logseq page
+*")
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (mocker-let
+         ((buffer-file-name (&optional b)
+                            ((:input '(nil) :output "dir/note.org"))))
+         (let ((actual (org-roam-logseq--parse-buffer nil))
+               (expected '(:property-p t
+                           :title-point 64
+                           :id-p t
+                           :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
                            :title "note"
                            :links nil)))
            (should (equal actual expected))))))))
@@ -156,11 +192,8 @@
                             ((:input '(nil) :output "dir/note.org")))
           (org-id-new ()
                       ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p nil)))
-               (expected '(:cache-p nil
-                           :id-p nil
-                           :id "123456789"
-                           :title-p nil
+         (let ((actual (org-roam-logseq--parse-buffer nil))
+               (expected '(:id "123456789"
                            :title "note"
                            :links nil)))
            (should (equal actual expected))))))))
@@ -177,13 +210,15 @@
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t)))
-              (expected '(:cache-p t
+        (let ((actual (org-roam-logseq--parse-buffer nil))
+              (expected '(:property-p t
+                          :title-point 88
                           :id-p t
                           :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
+                          :roam-aliases ("a" "c d")
                           :title-p t
                           :title "Note"
-                          :aliases ("b" "e")
+                          :aliases ("a" "b" "c d" "e")
                           :links nil)))
           (should (equal actual expected)))))))
 
@@ -224,8 +259,9 @@ A [[test links]] matching headline.
                                         ((:input '("dir/note.org") :output-generator #'identity)))
           (org-roam-logseq--file-p (p)
                                    ((:input '("dir/note.org") :output t :max-occur 2))))
-         (let ((actual (org-roam-logseq--parse-buffer '(:cache-p t)))
-               (expected '(:cache-p t
+         (let ((actual (org-roam-logseq--parse-buffer 'nil))
+               (expected '(:property-p t
+                           :title-point 68
                            :id-p t
                            :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
                            :title-p t
