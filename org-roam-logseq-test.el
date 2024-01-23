@@ -105,16 +105,9 @@
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (mocker-let
-         ((buffer-file-name (&optional b)
-                            ((:input '(nil) :output "dir/note.org")))
-          (org-id-new ()
-                      ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer nil))
-               (expected '(:id "123456789"
-                           :title "note"
-                           :links nil)))
-           (should (equal actual expected))))))))
+        (let ((actual (org-roam-logseq--parse-buffer nil))
+              (expected nil))
+          (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--simple ()
   (with-temp-buffer
@@ -123,16 +116,9 @@
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (mocker-let
-         ((buffer-file-name (&optional b)
-                            ((:input '(nil) :output "dir/note.org")))
-          (org-id-new ()
-                      ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer nil))
-               (expected '(:id "123456789"
-                           :title "note"
-                           :links nil)))
-           (should (equal actual expected))))))))
+        (let ((actual (org-roam-logseq--parse-buffer nil))
+              (expected nil))
+          (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--title-only ()
   (with-temp-buffer
@@ -142,17 +128,11 @@
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (mocker-let
-         ((buffer-file-name (&optional b)
-                            ((:input '(nil) :output "dir/note.org")))
-          (org-id-new ()
-                      ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer nil))
-               (expected '(:title-p t
-                           :title "Test note"
-                           :id "123456789"
-                           :links nil)))
-           (should (equal actual expected))))))))
+        (let ((actual (org-roam-logseq--parse-buffer nil))
+              (expected '(:first-section-p t
+                          :title-point 1
+                          :title "Test note")))
+          (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--prop-only ()
   (with-temp-buffer
@@ -165,17 +145,11 @@
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (mocker-let
-         ((buffer-file-name (&optional b)
-                            ((:input '(nil) :output "dir/note.org"))))
-         (let ((actual (org-roam-logseq--parse-buffer nil))
-               (expected '(:property-p t
-                           :title-point 64
-                           :id-p t
-                           :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                           :title "note"
-                           :links nil)))
-           (should (equal actual expected))))))))
+        (let ((actual (org-roam-logseq--parse-buffer nil))
+              (expected '(:first-section-p t
+                          :title-point 64
+                          :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f")))
+          (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--heading-id ()
   (with-temp-buffer
@@ -187,16 +161,9 @@
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        (mocker-let
-         ((buffer-file-name (&optional b)
-                            ((:input '(nil) :output "dir/note.org")))
-          (org-id-new ()
-                      ((:output "123456789"))))
-         (let ((actual (org-roam-logseq--parse-buffer nil))
-               (expected '(:id "123456789"
-                           :title "note"
-                           :links nil)))
-           (should (equal actual expected))))))))
+        (let ((actual (org-roam-logseq--parse-buffer nil))
+              (expected nil))
+          (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--aliases ()
   (with-temp-buffer
@@ -211,15 +178,12 @@
       (let ((org-inhibit-startup t))
         (org-mode)
         (let ((actual (org-roam-logseq--parse-buffer nil))
-              (expected '(:property-p t
+              (expected '(:first-section-p t
                           :title-point 88
-                          :id-p t
                           :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
                           :roam-aliases ("a" "c d")
-                          :title-p t
                           :title "Note"
-                          :aliases ("a" "b" "c d" "e")
-                          :links nil)))
+                          :aliases ("a" "b" "c d" "e"))))
           (should (equal actual expected)))))))
 
 (ert-deftest org-roam-logseq--parse-buffer--links ()
@@ -253,21 +217,18 @@ A [[test links]] matching headline.
     (delay-mode-hooks
       (let ((org-inhibit-startup t))
         (org-mode)
-        ;; TODO: HERE need to mock org-roam-file-p
         (mocker-let
          ((org-roam-logseq--expand-file (p)
                                         ((:input '("dir/note.org") :output-generator #'identity)))
           (org-roam-logseq--file-p (p)
                                    ((:input '("dir/note.org") :output t :max-occur 2))))
-         (let ((actual (org-roam-logseq--parse-buffer 'nil))
-               (expected '(:property-p t
+         (let ((actual (org-roam-logseq--parse-buffer nil))
+               (expected '(:first-section-p t
                            :title-point 68
-                           :id-p t
                            :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                           :title-p t
                            :title "Test note"
-                           :links ((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")
-                                   (title 288 298 "Logseq" nil "[[Logseq]]")))))
+                           :links ((title 288 298 "Logseq" nil "[[Logseq]]")
+                                   (file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")))))
            (should (equal actual expected))))))))
 
 (ert-deftest org-roam-logseq--reverse-map--with-conflicts ()
@@ -415,50 +376,105 @@ A [[test links]] matching headline.
           (should (equal result (buffer-string)))
           (should (eq actual expected)))))))
 
-(ert-deftest org-roam-logseq--update-top--typical ()
+(ert-deftest org-roam-logseq--update-first-section--typical ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 *")
-    (delay-mode-hooks
-      (let ((org-inhibit-startup t))
-        (org-mode)
-        (let* ((id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f")
-               (aliases '("c d" "b" "a"))
-               (title "Test note")
-               (result ":PROPERTIES:
+    (mocker-let
+     ((org-id-get-create (&optional f)
+                         ((:input '(nil)
+                           :output-generator
+                           (lambda (&optional f)
+                             (goto-char (point-min))
+                             (insert ":PROPERTIES:
+:ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
+:END:
+")
+                             "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"))))
+      (org-roam-logseq--buffer-title () ((:output "Test note"))))
+     (delay-mode-hooks
+       (let ((org-inhibit-startup t))
+         (org-mode))
+       (let* ((plist (org-roam-logseq--parse-buffer nil))
+              (result ":PROPERTIES:
+:ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
+:END:
+#+title: Test note
+* Typical Logseq page
+*")
+              (expected 86)
+              (actual (org-roam-logseq--update-first-section plist)))
+         (should (equal result (buffer-string)))
+         (should (eq actual expected)))))))
+
+(ert-deftest org-roam-logseq--update-first-section--with-alias ()
+  (with-temp-buffer
+    (insert "#+alias: a, b, \"c d\"
+* Typical Logseq page
+*")
+    (mocker-let
+     ((org-id-get-create (&optional f)
+                         ((:input '(nil)
+                           :output-generator
+                           (lambda (&optional f)
+                             (goto-char (point-min))
+                             (insert ":PROPERTIES:
+:ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
+:END:
+")
+                             "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"))))
+      (org-roam-property-add (p v)
+                             ((:max-occur 3
+                               :input-matcher
+                               (lambda (p _) (equal p "ROAM_ALIASES"))
+                               :output-generator
+                               (lambda (p v)
+                                 (goto-char (point-min))
+                                 (forward-line 2)
+                                 (beginning-of-line)
+                                 (when (looking-at ":END:")
+                                   (insert ":ROAM_ALIASES: a b \"c d\"\n"))))))
+      (org-roam-logseq--buffer-title () ((:output "Test note"))))
+     (delay-mode-hooks
+       (let ((org-inhibit-startup t))
+         (org-mode))
+       (let* ((plist (org-roam-logseq--parse-buffer nil))
+              (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :ROAM_ALIASES: a b \"c d\"
 :END:
 #+title: Test note
-
+#+alias: a, b, \"c d\"
 * Typical Logseq page
 *")
-               (expected t)
-               (actual (org-roam-logseq--update-top id title aliases)))
-          (should (equal result (buffer-string)))
-          (should (eq actual expected)))))))
+              (expected 111)
+              (actual (org-roam-logseq--update-first-section plist)))
+         (should (equal result (buffer-string)))
+         (should (eq actual expected)))))))
 
-(ert-deftest org-roam-logseq--update-top--missing-title ()
+(ert-deftest org-roam-logseq--update-first-section--missing-title ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 * Typical Logseq page
 *")
-    (delay-mode-hooks
-      (let ((org-inhibit-startup t))
-        (org-mode)
-        (let* ((title "Test note")
-               (result ":PROPERTIES:
+    (mocker-let
+     ((org-roam-logseq--buffer-title () ((:output "Test note"))))
+     (delay-mode-hooks
+       (let ((org-inhibit-startup t))
+         (org-mode))
+       (let* ((plist (org-roam-logseq--parse-buffer nil))
+              (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 #+title: Test note
 * Typical Logseq page
 *")
-               (expected t)
-               (actual (org-roam-logseq--update-top nil title nil)))
-          (should (equal result (buffer-string)))
-          (should (eq actual expected)))))))
+              (expected 19)
+              (actual (org-roam-logseq--update-first-section plist)))
+         (should (equal result (buffer-string)))
+         (should (eq actual expected)))))))
 
 ;; TODO: test inventory-all
 
