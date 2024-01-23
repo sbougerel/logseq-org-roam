@@ -426,6 +426,65 @@ The plist contains the following properties:
                    (image-type-available-p (setq type (cdr elem))))
 	  (throw 'found type))))))
 
+(defun org-roam-logseq--value-string-p (element)
+  "Return non-nil if ELEMENT has a string value that is not empty."
+  (and (org-element-property :value element)
+       (not (string-empty-p (org-element-property :value element)))))
+
+(defun org-roam-logseq--parse-first-section-properties (section plist)
+  "Return updated PLIST based on first SECTION properties."
+  (org-element-map section 'property-drawer
+    (lambda (property-drawer)
+      ;; Set `:title-point' after the drawer, and reset if there's a title
+      (setq plist (plist-put plist :title-point
+                             (progn
+                               (goto-char
+                                (- (org-element-property :end
+                                                         property-drawer)
+                                   (org-element-property :post-blank
+                                                         property-drawer)))
+                               (beginning-of-line)
+                               (point))))
+      (org-element-map property-drawer 'node-property
+        (lambda (node-property)
+          (let ((key (org-element-property :key node-property)))
+            (cond
+             ((and (equal "ID" key)
+                   (org-roam-logseq--value-string-p node-property))
+              (setq plist (plist-put plist :id
+                                     (org-element-property :value
+                                                           node-property))))
+             ((and (equal "ROAM_ALIASES" key)
+                   (org-roam-logseq--value-string-p node-property))
+              (setq plist (plist-put plist :roam-aliases
+                                     (split-string-and-unquote
+                                      (downcase
+                                       (org-element-property
+                                        :value
+                                        node-property))))))))))))
+  plist)
+
+(defun org-roam-logseq--parse-first-section-keywords (section plist)
+  "Return updated PLIST based on first SECTION keywords."
+  (org-element-map section 'keyword
+    (lambda (keyword)
+      (let ((key (org-element-property :key keyword)))
+        (cond
+         ((equal "TITLE" key)
+          (setq plist (plist-put plist :title-point
+                                 (org-element-property :begin keyword)))
+          (when (org-roam-logseq--value-string-p keyword)
+            (setq plist (plist-put plist :title
+                                   (org-element-property :value keyword)))))
+         ((and (equal "ALIAS" key)
+               (org-roam-logseq--value-string-p keyword))
+          (setq plist (plist-put plist :aliases
+                                 (split-string
+                                  (downcase
+                                   (org-element-property :value keyword))
+                                  "\\s-*,\\s-*"))))))))
+  plist)
+
 (defun org-roam-logseq--parse-first-section (data plist)
   "Return updated PLIST based on first section of DATA."
   (declare (pure t) (side-effect-free t))
@@ -437,166 +496,101 @@ The plist contains the following properties:
         (not (consp (caddr data)))
         (not (eq 'section (caaddr data))))
     ;; no content or no first section
-    nil)
+    plist)
    (t
+    (setq plist (plist-put plist :first-section-p t))
     (let ((section (caddr data)))
-      ;; Search for properties drawer
-      (org-element-map section 'property-drawer
-        (lambda (property-drawer)
-          (setq plist (plist-put plist :property-p t))
-          (setq plist (plist-put plist :title-point
-                                 (progn
-                                   (goto-char
-                                    (- (org-element-property :end
-                                                             property-drawer)
-                                       (org-element-property :post-blank
-                                                             property-drawer)))
-                                   (beginning-of-line)
-                                   (point))))
-          (org-element-map property-drawer 'node-property
-            (lambda (node-property)
-              (let ((key (org-element-property :key node-property)))
-                (cond
-                 ;; TODO: handle case where the property is present but empty
-                 ((equal "ID" key)
-                  (setq plist (plist-put plist :id-p t))
-                  (setq plist (plist-put plist :id
-                                         (org-element-property :value
-                                                               node-property))))
-                 ((equal "ROAM_ALIASES" key)
-                  (setq plist (plist-put plist :roam-aliases
-                                         (split-string-and-unquote
-                                          (downcase
-                                           (org-element-property
-                                            :value
-                                            node-property))))))))))
-          ;; Record point where ID should be inserted
-          (unless (plist-member plist :id-p)
-            (setq plist (plist-put plist :id-point
-                                   (progn
-                                     (goto-char
-                                      (org-element-property :begin property-drawer))
-                                     (forward-line)
-                                     (beginning-of-line)
-                                     (point)))))))
-      (org-element-map section 'keyword
-        (lambda (keyword)
-          (let ((key (org-element-property :key keyword)))
-            (cond
-             ;; TODO: handle case where the keyword is present but empty
-             ((equal "TITLE" key)
-              (setq plist (plist-put plist :title-p t))
-              (setq plist (plist-put plist :title (org-element-property :value keyword))))
-             ((equal "ALIAS" key)
-              (setq plist (plist-put plist :aliases
-                                     (split-string
-                                      (downcase
-                                       (org-element-property :value keyword))
-                                      "\\s-*,\\s-*")))))))))))
-  ;; Settle missing values
-  (unless (plist-member plist :id)
-    (setq plist (plist-put plist :id (org-id-new))))
-  (unless (plist-member plist :title)
-    (setq plist (plist-put plist :title (file-name-sans-extension
-                                         (file-name-base
-                                          (buffer-file-name (buffer-base-buffer)))))))
+      (setq plist (org-roam-logseq--parse-first-section-properties section plist))
+      (setq plist (org-roam-logseq--parse-first-section-keywords section plist)))
+    plist)))
+
+(defun org-roam-logseq--parse-file-links (data plist)
+  "Return updated PLIST based on file links in DATA."
+  (let (links)
+    (org-element-map data 'link
+      (lambda (link)
+        (when (and (equal (org-element-property :type link) "file")
+                   (org-element-property :contents-begin link)
+                   (not (org-element-property :search-option link)))
+          (let* ((path (org-element-property :path link))
+                 (true-path (org-roam-logseq--expand-file path)))
+            (when (org-roam-logseq--file-p true-path)
+              (let* ((descr (buffer-substring-no-properties
+                             (org-element-property :contents-begin link)
+                             (org-element-property :contents-end link)))
+                     (begin (org-element-property :begin link))
+                     (end (- (org-element-property :end link)
+                             (org-element-property :post-blank link)))
+                     (raw (buffer-substring-no-properties begin end)))
+                (push `(file ,begin ,end ,path ,descr ,raw) links)))))))
+    (when links (setq plist (plist-put plist :links links))))
   plist)
 
-(defun org-roam-logseq--parse-buffer (plist)
+(defun org-roam-logseq--parse-fuzzy-links (data plist)
+  "Return updated PLIST based on fuzzy links in DATA."
+  (let (links
+        (text-targets (make-hash-table :test #'equal)))
+    (org-element-map data (append '(link target headline)
+                                  org-roam-logseq--named)
+      (lambda (element)
+        (let ((type (org-element-type element)))
+          (if-let ((name (org-element-property :name element)))
+              ;; Org-mode searches are case incensitive
+              (puthash (downcase name) t text-targets))
+          (cond
+           ;; See `org-link-search' to understand what fuzzy link point to
+           ((eq type 'headline)
+            (puthash (downcase
+                      ;; TODO: remove internal function dependency
+                      (org-link--normalize-string
+                       (org-element-property :raw-value element))) t text-targets))
+           ((and (eq type 'link)
+                 (equal (org-element-property :type element) "fuzzy"))
+            (let ((path (org-element-property :path element))
+                  (content (org-element-property :contents-begin element)))
+              (unless (or
+                       ;; "[[*Heading]]" links qualify as fuzzy, ignore them
+                       (string-match "\\`\\*" path)
+                       ;; When the link has no content, ignore image types
+                       (and (not content)
+                            (org-roam-logseq--image-file-p path)))
+                (let* ((descr (if content
+                                  (buffer-substring-no-properties
+                                   (org-element-property :contents-begin element)
+                                   (org-element-property :contents-end element))))
+                       (begin (org-element-property :begin element))
+                       (end (- (org-element-property :end element)
+                               (org-element-property :post-blank element)))
+                       (raw (buffer-substring-no-properties begin end)))
+                  (push `(title ,begin ,end ,path ,descr, raw) links)))))
+           ((eq type 'target)
+            (puthash (downcase (org-element-property :value element)) t text-targets))))))
+    ;; Filter out link that match targets, headlines or named elements
+    (setq links (seq-filter (lambda (link) (not (gethash (nth 3 link) text-targets)))
+                            links))
+    (when links (setq plist (plist-put plist :links links))))
+  plist)
+
+(defun org-roam-logseq--parse-buffer (plist &optional parts)
   "Return updated PLIST based on current buffer's content.
-This function updates PLIST with the following properties:
-
-- `:tofp-p' t if top of file has properties
-- `:id-p' t if top of file has an ID property
-- `:id' the ID found in the file or gotten from `org-id-new'
-- `:title-p' t if the file has a title
-- `:title' the title of the file or from file's name
-- `:aliases' the list of (top-level) Logseq aliases '#+ALIAS': ...
-- `:links' lists all Logseq links candidates for conversion
-- (optional) `:id-point' the point where id should be inserted
-- (optional) `:title-point' the point where title should be inserted
-
-Only Logseq #+ALIAS keywords that do not have an equivalent in
-:ROAM_ALIASES: are inventoried.  The program will attempt to
-create corresponding :ROAM_ALIASES: for every #+ALIAS (but not
-the reverse).
-
-The last property `:links' is a list ((TYPE BEG END TITLE MATCH)
-...) of potential Logseq links candidates to be translasted to
-external ID links."
+This function updates PLIST with based on selected PARTS, a list
+of keywords which defaults to \\='(first-section file-links
+fuzzy-links)."
+  (unless (and parts (consp parts))
+    (setq parts '(first-section file-links fuzzy-links)))
   (org-with-wide-buffer
-   (let ((data (org-element-parse-buffer))
-         (text-targets (make-hash-table :test #'equal))
-         links)
-     (catch 'failure
-       (setq plist (org-roam-logseq--parse-first-section data plist)))
-     ;; Gather relevant information
-     (org-element-map data (append '(link target keyword node-property headline) org-roam-logseq--named)
-       (lambda (element)
-         ;; TODO: The new way of doing, with catch, and each element updating plist or others as they go!
-         ;; Start by initializing element types with corresponding variables, then:
-         ;; (catch 'processed
-         ;;   (setq plist (org-roam-logseq--parse-common element plist))
-         ;;   (org-roam-logseq--parse-for))
-         ;;   )
-         ;; Finally run with element "nil" to signal the end of the parsing
-         ;;   (setq plist (org-roam-logseq--parse-common nil plist))
-         ;; Use plist to store states in between calls, until the nil call.
-         (let ((type (org-element-type element)))
-           (if-let ((name (org-element-property :name element)))
-               ;; Org-mode searches are case incensitive
-               (puthash (downcase name) t text-targets))
-           (cond
-            ;; See org-link-search to understand what fuzzy link point to
-            ;; TODO: simplify fragment with chaining/dispatch?
-            ;; TODO: split FILE and TITLE processing
-            ((eq type 'headline)
-             (puthash (downcase
-                       ;; TODO: remove internal function dependency
-                       (org-link--normalize-string
-                        (org-element-property :raw-value element))) t text-targets))
-            ((and (eq type 'link)
-                  (equal (org-element-property :type element) "fuzzy"))
-             (let ((path (org-element-property :path element))
-                   (content (org-element-property :contents-begin element)))
-               (unless (or
-                        ;; "[[*Heading]]" links qualify as fuzzy, ignore them
-                        (string-match "\\`\\*" path)
-                        ;; When the link has no content, ignore image types
-                        (and (not content)
-                             (org-roam-logseq--image-file-p path)))
-                 (let* ((descr (if content
-                                   (buffer-substring-no-properties
-                                    (org-element-property :contents-begin element)
-                                    (org-element-property :contents-end element))))
-                        (begin (org-element-property :begin element))
-                        (end (- (org-element-property :end element)
-                                (org-element-property :post-blank element)))
-                        (raw (buffer-substring-no-properties begin end)))
-                   (push `(title ,begin ,end ,path ,descr, raw) links)))))
-            ((and (eq type 'link)
-                  (equal (org-element-property :type element) "file")
-                  (org-element-property :contents-begin element)
-                  (not (org-element-property :search-option element)))
-             (let* ((path (org-element-property :path element))
-                    (true-path (org-roam-logseq--expand-file path)))
-               (when (org-roam-logseq--file-p true-path)
-                 (let* ((descr (buffer-substring-no-properties
-                                (org-element-property :contents-begin element)
-                                (org-element-property :contents-end element)))
-                        (begin (org-element-property :begin element))
-                        (end (- (org-element-property :end element)
-                                (org-element-property :post-blank element)))
-                        (raw (buffer-substring-no-properties begin end)))
-                   (push `(file ,begin ,end ,path ,descr ,raw) links)))))
-            ((eq type 'target)
-             (puthash (downcase (org-element-property :value element)) t text-targets))))))
-     ;; Filter out link that match targets, headlines or named elements
-     (setq plist (plist-put plist :links
-                            (seq-filter (lambda (link)
-                                          (not (gethash (nth 3 link)
-                                                        text-targets)))
-                                        links))))))
+   (let* ((data (org-element-parse-buffer))
+          (parse
+           (catch 'failure
+             (when (memq 'first-section parts)
+               (setq plist (org-roam-logseq--parse-first-section data plist)))
+             (when (memq 'file-links parts)
+               (setq plist (org-roam-logseq--parse-file-links data plist)))
+             (when (memq 'fuzzy-links parts)
+               (setq plist (org-roam-logseq--parse-fuzzy-links data plist))))))
+     (when (eq parse 'invalid-ast)
+       (setq plist (plist-put plist :parse-error t)))))
+  plist)
 
 (defun org-roam-logseq--reverse-map (inventory)
   "Map INVENTORY in reverse and reports conflicts.
@@ -694,6 +688,10 @@ parsed to ensure correctness and uniqueness of each arguments."
        (goto-char (point-min))
        (insert "\n")
        (backward-char)))
+   ;; TODO: Must use org-id-get-create to ensure that the ID is registered in
+   ;; org database of locations Also I feel that I should keep using the
+   ;; highlevel functions, as much as possible, to ensure consistancy across
+   ;; versions.  Thus I might need to do 2 passes.
    (when id (org-entry-put (point) "ID" id))
    (when aliases
      (dolist (alias aliases)
