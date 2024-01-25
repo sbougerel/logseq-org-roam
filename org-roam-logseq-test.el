@@ -231,6 +231,51 @@ A [[test links]] matching headline.
                                    (file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")))))
            (should (equal actual expected))))))))
 
+(ert-deftest org-roam-logseq--parse-buffer--idempotent ()
+  (with-temp-buffer
+    (insert ":PROPERTIES:
+:ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
+:END:
+#+title: Test note
+
+* TODO Test links [/]
+** <<Target>>A target
+#+NAME: code-block
+#+BEGIN_SRC emacs-lisp -n -r
+  (save-excursion                 (ref:example)
+     (search-forward \"[[not-a-link]]\")
+#+END_SRC
+** A fuzzy [[Logseq]] link
+:PROPERTIES:
+:CUSTOM_ID: some-custom-id
+:END:
+A coderef [[(example)]] link.
+** A file link to a [[file:dir/note.org][note]]
+An inline image [[image.jpg]] matched by image-file-name-extensions.
+** A file link with a search option [[file:dir/note.org::1][note]]
+A link to [[code-block]].
+A [[#some-custom-id]] link.
+** Link to [[target]]
+A [[*Test links][headline link]].
+A [[test links]] matching headline.
+")
+    (delay-mode-hooks
+      (let ((org-inhibit-startup t))
+        (org-mode)
+        (mocker-let
+         ((org-roam-logseq--expand-file (p)
+                                        ((:input '("dir/note.org")
+                                          :output-generator #'identity
+                                          :max-occur 2)))
+          (org-roam-logseq--file-p (p)
+                                   ((:input '("dir/note.org")
+                                     :output t
+                                     :max-occur 4))))
+         (let* ((expected (org-roam-logseq--parse-buffer nil))
+                (actual (org-roam-logseq--parse-buffer expected)))
+           (should (equal actual expected))))))))
+
+
 (ert-deftest org-roam-logseq--reverse-map--with-conflicts ()
   (let ((fake-inventory (make-hash-table :test #'equal)))
     (puthash "x" '(:title-p t
@@ -376,6 +421,7 @@ A [[test links]] matching headline.
           (should (equal result (buffer-string)))
           (should (eq actual expected)))))))
 
+;; TODO: reformat to make it look nicer.
 (ert-deftest org-roam-logseq--update-first-section--typical ()
   (with-temp-buffer
     (insert "* Typical Logseq page
