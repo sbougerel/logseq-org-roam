@@ -415,6 +415,9 @@ being modified in a buffer."
                                    (org-element-property :value keyword)))))
          ((and (equal "ALIAS" key)
                (org-roam-logseq--value-string-p keyword))
+          ;; TODO: support anycase aliases, to ensure they appear in the same
+          ;; case in ROAM_ALIASES.  This should be done with computing union /
+          ;; diff.
           (setq plist (plist-put plist :aliases
                                  (split-string
                                   (downcase
@@ -451,6 +454,7 @@ being modified in a buffer."
                    (not (org-element-property :search-option link)))
           (let* ((path (org-element-property :path link))
                  (true-path (org-roam-logseq--expand-file path)))
+            ;; Convert only links that point to org-roam files
             (when (org-roam-logseq--file-p true-path)
               (let* ((descr (buffer-substring-no-properties
                              (org-element-property :contents-begin link)
@@ -536,7 +540,6 @@ that were parsed."
              (plist (gethash key inventory)))
         (unless (or (plist-get plist :modified-p)
                     (plist-get plist :cache-p)
-                    ;; Don't reparse, let user inspect and re-run
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
           (setq count (1+ count))
@@ -614,73 +617,57 @@ necessary parts of each files."
 
 ;; TODO HERE files links won't work without FILES
 (defun org-roam-logseq--calculate-fuzzy-dict (files inventory)
-  "Map titles and aliases to each key in INVENTORY.
+  "Map titles and aliases of FILES to keys in INVENTORY.
 This function ensures that titles and aliases found across all
 files are unique.  If any 2 titles or alias conflicts with each
 other, there is no unique target for titled links to these files.
 
 Return a map of fuzzy links of INVENTORY keys or nil if conflicts
-where found."
+were found."
   (let ((dict (make-hash-table :test #'equal))
         (conflicts (make-hash-table :test #'equal))
         conflicts-p)
-    (maphash (lambda (key plist)
-               (unless (or (plist-get plist :modified-p)
-                           (plist-get plist :parse-error)
-                           (plist-get plist :update-error))
-                 ;; Aliases and title from the same file don't conflict
-                 (let ((merged (seq-uniq
-                                (append
-                                 (list (downcase (plist-get plist :title)))
-                                 (plist-get plist :aliases)
-                                 (plist-get plist :roam-aliases)))))
-                   (dolist (target merged)
-                     (if (and (not (gethash target conflicts))
-                              (not (gethash target dict)))
-                         (puthash target key dict)
-                       (unless (gethash target conflicts)
-                         (puthash target (gethash target dict) conflicts)
-                         (remhash target dict))
-                       ;; Log the conflict
-                       (let* ((this-file key)
-                              (this-title-p (equal target (downcase (plist-get plist :title))))
-                              (other-file (gethash target conflicts))
-                              (other-plist (gethash other-file inventory))
-                              (other-title-p (equal target (downcase (plist-get other-plist :title)))))
-                         (unless conflicts-p
-                           (princ "** Conflicts found in fuzzy links:\n")
-                           (setq conflicts-p t))
-                         (princ (concat "- The "
-                                        (if this-title-p "title" "alias")
-                                        " \"" target "\" in "
-                                        (org-roam-logseq--fl this-file)
-                                        " conflicts with the "
-                                        (if other-title-p "title" "alias")
-                                        " in "
-                                        (org-roam-logseq--fl other-file)
-                                        ", links to \"" target
-                                        "\" will not be converted.\n"))))))))
-             inventory)
+    (dolist (file files)
+      (let* ((key (downcase file))
+             (plist (gethash key inventory)))
+        (unless (or (plist-get plist :modified-p)
+                    (plist-get plist :parse-error))
+          ;; Aliases and title from the same file don't conflict
+          (let ((merged (seq-uniq
+                         (append
+                          (list (downcase (plist-get plist :title)))
+                          (plist-get plist :aliases)
+                          (plist-get plist :roam-aliases)))))
+            (dolist (target merged)
+              (if (and (not (gethash target conflicts))
+                       (not (gethash target dict)))
+                  (puthash target key dict)
+                (unless (gethash target conflicts)
+                  (puthash target (gethash target dict) conflicts)
+                  (remhash target dict))
+                ;; Log the conflict
+                (let* ((this-file key)
+                       (this-title-p (equal target (downcase (plist-get plist :title))))
+                       (other-file (gethash target conflicts))
+                       (other-plist (gethash other-file inventory))
+                       (other-title-p (equal target (downcase (plist-get other-plist :title)))))
+                  (unless conflicts-p
+                    (princ "** Conflicts found in fuzzy links:\n")
+                    (setq conflicts-p t))
+                  (princ (concat "- The "
+                                 (if this-title-p "title" "alias")
+                                 " \"" target "\" in "
+                                 (org-roam-logseq--fl this-file)
+                                 " conflicts with the "
+                                 (if other-title-p "title" "alias")
+                                 " in "
+                                 (org-roam-logseq--fl other-file)
+                                 ", links to \"" target
+                                 "\" will not be converted.\n")))))))))
     (if conflicts-p
         ;; TODO: standardize on error codes
         (throw 'stop 'conflits-encountered)
       dict)))
-
-(defun org-roam-logseq--filter-links (links inventory reverse_map)
-  "Using INVENTORY and REVERSE_MAP, keep items in LINKS to update.
-Find each of the links that will be converted to an external ID,
-return a list sorted by reverse position: last links will be
-converted first to avoid computing point movements between
-updates."
-  (let (convert)
-    (pcase-dolist (`(,type ,beg ,end ,tgt ,descr ,raw) links)
-      (if-let* ((path (if (eq 'file type) tgt
-                        (gethash (downcase tgt) reverse_map)))
-                (props (gethash path inventory)))
-          ;; This is a link to a known file, convert it
-          (let ((id (plist-get props :id)))
-            (push `(,type ,beg ,end ,tgt ,descr ,raw ,id) convert))))
-    (sort convert (lambda (a b) (> (nth 1 a) (nth 1 b))))))
 
 (defun org-roam-logseq--buffer-title ()
   "Return a title based on current buffer's file name."
@@ -726,12 +713,13 @@ updating the buffer.
 The argument FUZZY-DICT is a hash-tables needed to map a fuzzy
 link target to a key in inventory (downcased path).  When dealing
 only with file links, this hashtable is nil."
-  ;; First ensure that `raw' matches with the buffer's content for all links
-  ;; (i.e. even hash has a small chance of collision)
+  ;; Even hash has a small chance of collision
   (catch 'fault
     (pcase-dolist (`(_ ,beg ,end _ _ ,raw) links)
       (unless (equal (buffer-substring-no-properties beg end) raw)
         (throw 'fault 'mismatch-link)))
+    ;; Avoid offset calculations with buffer updates
+    (sort links (lambda (a b) (> (nth 1 a) (nth 1 b))))
     (pcase-dolist (`(,type ,beg ,end ,path ,descr _) links)
       (when-let ((id (if (eq 'file type)
                          (plist-get (gethash (downcase
@@ -822,6 +810,47 @@ only with file links, this hashtable is nil."
     (unless log-p
       (princ "No links to update\n"))
     updates-p))
+
+(defun org-roam-logseq--create (inventory fuzzy-dict)
+  "Author new files for dead links in INVENTORY.
+FUZZY-DICT is used for dead links detection with fuzzy links only.
+
+Several variables control the authoring behaviour:
+
+`org-roam-logseq-create-default-directory' is the directory used
+  for file creation with fuzzy links.
+
+`org-roam-logseq-create-journal'
+
+`org-roam-logseq-create-accept-path', when non-nil, is a regex
+  that is used to match the path in file link.  If the path is a
+  match, a file link is a candidate for creation.  It defaults
+  to `(regex-quote (expand-file-name \"pages\"
+  org-roam-directory))' which is usally the path where Logseq
+  stores files other than journal entries.
+
+`org-roam-logseq-create-reject-path', when non-nil, is a regex
+  that is used to match the path in file link.  If the path is a
+  match, a file link is rejected from creation, even if it was a
+  match with `org-roam-logseq-create-accept-path'.  It defaults
+  to nil.
+
+
+
+Return the list of new files created."
+  (let (created-files)
+    (maphash (lambda (_ plist)
+               (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
+                 (when (and (if (eq type 'file)
+                                (eq 'not-found (gethash (downcase path)
+                                                        inventory 'not-found))
+                              (eq 'not-found (gethash (downcase path)
+                                                      fuzzy-dict 'not-found))))
+                   ;; TODO: HERE complete comment and find file.
+                   (org-roam-logseq--with-edit-buffer path
+                     )
+                   )))
+             inventory)))
 
 (defun org-roam-logseq--log-start (force create)
   "Log start of execution and state of FORCE and CREATE flags."
@@ -997,6 +1026,7 @@ the documentation string of `org-roam-logseq-capture'."
                 inventory
                 modified-files
                 created-files
+                not-created-files
                 fuzzy-dict)
            (org-roam-logseq--catch-fun 'stop
                (lambda (_)
@@ -1014,22 +1044,26 @@ the documentation string of `org-roam-logseq-capture'."
              (org-roam-logseq--inventory-update modified-files inventory
                                                 (append '(first-section) link-parts))
              (when (memq 'fuzzy-links link-parts)
-               (setq fuzzy-dict (org-roam-logseq--calcuate-fuzzy-dict files inventory)))
+               (setq fuzzy-dict (org-roam-logseq--calculate-fuzzy-dict files inventory)))
              ;; Do as much work as possible, but beyond this point it could
              ;; affect accuracy of the changes
              (org-roam-logseq--check-errors files inventory)
+             (setq not-created-files files)
              (when create_flag
                (setq created-files
                      (org-roam-logseq--create-from-links files inventory
                                                          fuzzy-dict))
                (org-roam-logseq--inventory-update created-files inventory
+                                                  ;; Assume no links in templates
                                                   '(first-section))
-               (org-roam-logseq--check-errors files inventory))
-             (when (org-roam-logseq--update-all-links files inventory
-                                                      fuzzy-dict)
+               (org-roam-logseq--check-errors created-files inventory)
+               (setq files (append created-files files)))
+             (when (org-roam-logseq--update-all-links not-created-files
+                                                      inventory fuzzy-dict)
                (run-hooks 'org-roam-logseq-updated-hook))
+             (org-roam-logseq--check-errors files inventory)
              ;; TODO: Add summary of results
-             (org-roam-logseq--check-errors files inventory))))))))
+             )))))))
 
 (provide 'org-roam-logseq)
 ;;; org-roam-logseq.el ends here
