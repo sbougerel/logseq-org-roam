@@ -811,31 +811,104 @@ only with file links, this hashtable is nil."
       (princ "No links to update\n"))
     updates-p))
 
+(defun org-roam-logseq-create-translate-default (slug)
+  "Transform SLUG into a file path."
+  ;; TODO replace strings by custom variables
+  (if-let ((date-like (string-match-p
+                       org-roam-logseq-journal-title-regex
+                       slug))
+           (time (parse-time-string slug))
+           (year (nth 5 time))
+           (month (nth 4 time))
+           (day (nth 3 time))
+           (date-string (format "%s-%s-%s" year month day))
+           (real-date (format-time-string "%Y-%m-%d"
+                                          (date-to-time date-string)))
+           (real-date-p (equal date-string real-date)))
+      (setq slug (concat
+                  (org-roam-logseq--expand-file
+                   slug (org-roam-logseq--expand-file
+                         org-roam-logseq-journals-directory
+                         org-roam-directory))
+                  ".org"))
+    (setq slug (replace-regexp-in-string "[\\/]" "_" slug))
+    (unless (string-match-p slug "\\.org\\='")
+      (setq slug (concat slug ".org")))
+    (setq slug (org-roam-logseq--expand-file
+                slug (org-roam-logseq--expand-file
+                      org-roam-logseq-pages-directory
+                      org-roam-directory)))))
+
+(defun org-roam-logseq-create-pages-only (file)
+  "Return true if FILE can be created."
+  (file-in-directory-p file
+                       (expand-file-name org-roam-logseq-pages-directory
+                                         org-roam-directory)))
+
+;;;###autoload (put 'org-roam-logseq-journal-title-regex 'safe-local-variable #'string)
+(defcustom org-roam-logseq-journal-title-regex
+  "20[0-9][0-9][_-]\\(?:0[1-9]\\|1[0-2]\\)[-_]\\(?:0[1-9]\\|[1-2][0-9]\\|3[0-1]\\)"
+  "This regexp tells apart links to journal files from page files.
+Set this variable so that it matches the setting
+:journal/page-title-format in Logseq.
+
+Note that even if the regex above matches,
+`org-roam-logseq-create-translate-default' will attempt to parse
+it with `parse-time-string' and verify that it is actually a real
+date (e.g. 2023-02-30 won't be accepted as a journal entry)."
+  :type 'string
+  :group 'org-roam-logseq)
+
+(defcustom org-roam-logseq-create-translate-link
+  #'org-roam-logseq-create-translate-default
+  "Function translating a link to a file path."
+  :type 'symbol
+  :group 'org-roam-logseq)
+
+;; TODO: filter files futher from `org-roam-list-files'
+;;;###autoload (put 'org-roam-logseq-pages-directory 'safe-local-variable #'string)
+(defcustom org-roam-logseq-pages-directory "pages"
+  "Set this variable to mirror Logseq :pages-directory setting."
+  :type 'string
+  :group 'org-roam-logseq)
+
+;;;###autoload (put 'org-roam-logseq-journals-directory 'safe-local-variable #'string)
+(defcustom org-roam-logseq-journals-directory "journals"
+  "Set this variable to mirror Logseq :journals-directory setting."
+  :type 'string
+  :group 'org-roam-logseq)
+
+;;;###autoload (put 'org-roam-logseq-create-accept 'safe-local-variable #'symbol)
+(defcustom org-roam-logseq-create-accept #'org-roam-logseq-create-pages-only
+  :type 'symbol
+  :group 'org-roam-logseq)
+
 (defun org-roam-logseq--create (inventory fuzzy-dict)
   "Author new files for dead links in INVENTORY.
 FUZZY-DICT is used for dead links detection with fuzzy links only.
 
-Several variables control the authoring behaviour:
+All dead links are considered candidates for creation of new
+files.  Fuzzy links are first transformed to a path by calling
+`org-roam-logseq-create-translate' using `funcall' with path as
+an argument.  File links are also translated by passing their
+description as argument, and if the downcased path resulting from
+the translation matches the file path of the link then it is
+used, otherwise the file path is applied and the description is
+only retained as the title.
 
-`org-roam-logseq-create-default-directory' is the directory used
-  for file creation with fuzzy links.
+Once the path is created, it is evaluated against the following
+variable `org-roam-logseq-create-accept'.  When non-nil, this
+variable is a regex that is used to match the path in file link.
+A path must match the regex to be accepted as a candidate for
+creation.  It defaults to matching the glob \"pages/*.org\" which
+is usually the path where Logseq stores files other than journal
+entries.  Thus journal entries will be rejected from creation by
+default.
 
-`org-roam-logseq-create-journal'
+Finally, the resulting path must match `org-roam-file-p'
 
-`org-roam-logseq-create-accept-path', when non-nil, is a regex
-  that is used to match the path in file link.  If the path is a
-  match, a file link is a candidate for creation.  It defaults
-  to `(regex-quote (expand-file-name \"pages\"
-  org-roam-directory))' which is usally the path where Logseq
-  stores files other than journal entries.
-
-`org-roam-logseq-create-reject-path', when non-nil, is a regex
-  that is used to match the path in file link.  If the path is a
-  match, a file link is rejected from creation, even if it was a
-  match with `org-roam-logseq-create-accept-path'.  It defaults
-  to nil.
-
-
+In all cases, the link description (if present) is used as the
+title for the new file.
 
 Return the list of new files created."
   (let (created-files)
@@ -846,6 +919,8 @@ Return the list of new files created."
                                                         inventory 'not-found))
                               (eq 'not-found (gethash (downcase path)
                                                       fuzzy-dict 'not-found))))
+                   ;; Create file path
+                   (org-roam-logseq-path-from-link path descr)
                    ;; TODO: HERE complete comment and find file.
                    (org-roam-logseq--with-edit-buffer path
                      )
