@@ -986,6 +986,7 @@ Return the list of new files created."
                 (plist-get plist :update-error)
                 (not (plist-get plist :links)))
           (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
+            ;; TODO: consider making 2 different section for file and fuzzy
             (when (if (eq type 'file)
                       (eq 'not-found (gethash
                                       (expand-file-name path
@@ -999,6 +1000,7 @@ Return the list of new files created."
                      (if (eq type 'file)
                          (expand-file-name path
                                            (file-name-directory file))
+                       ;; TODO: expand the result of file-name too
                        (funcall org-roam-logseq-create-translate path)))
                     (new-title (if (eq type 'file) descr path)))
                 (unless (or (file-exists-p new-path)
