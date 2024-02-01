@@ -370,7 +370,7 @@ previously created."
   (declare (indent 2) (debug t))
   (let ((result (make-symbol "result")))
     `(let ((,result (catch ',sym ,@body)))
-       (when (symbolp ,result)
+       (when (and ,result (symbolp ,result))
          (,fun ,result)))))
 
 (defun org-roam-logseq--fl (file)
@@ -699,10 +699,9 @@ necessary parts of each files."
          count_modified
          count_parsed
          elapsed)
-    (setq count_cached
-          (if force
-              (org-roam-logseq--inventory-from-cache inventory)
-            0))
+    (unless force
+      (setq count_cached
+            (org-roam-logseq--inventory-from-cache inventory)))
     (setq count_modified
           (org-roam-logseq--inventory-mark-modified files inventory))
     (setq count_external
@@ -714,8 +713,9 @@ necessary parts of each files."
      (concat
       (format "%s files found in org-roam directory\n"
               (hash-table-count inventory))
-      (format "%s files' metadata retrieved from cache\n"
-              count_cached)
+      (unless force
+        (format "%s files' metadata retrieved from cache\n"
+                count_cached))
       (format "%s files being visited in a modified buffer will be skipped\n"
               count_modified)
       (format "%s files are external to Logseq and will not be modified\n"
@@ -741,7 +741,6 @@ necessary parts of each files."
       (format "This took %.3f seconds\n" elapsed)))
     inventory))
 
-;; TODO HERE files links won't work without FILES
 (defun org-roam-logseq--calculate-fuzzy-dict (files inventory)
   "Map titles and aliases of FILES to keys in INVENTORY.
 This function ensures that titles and aliases found across all
@@ -1027,11 +1026,12 @@ Return the list of new files created."
 (defun org-roam-logseq--log-start (force create)
   "Log start of execution and state of FORCE and CREATE flags."
   ;; TODO: log other settings
-  ;; TODO: take pages & journal into account
   (princ
    (concat
     (format "* Ran %s\n" (format-time-string "%x at %X"))
     (format "Using Org-roam directory: %s\n" org-roam-directory)
+    (format "Logseq pages directory is: %s\n" org-roam-logseq-pages-directory)
+    (format "Logseq journal directory is: %s\n" org-roam-logseq-journals-directory)
     "With flags:\n"
     (format "- ~force~ was: %s\n" force)
     (format "- ~create~ was: %s\n" create)
@@ -1092,6 +1092,7 @@ conversion.\n\n")))))
    ((not (file-directory-p org-roam-directory))
     (display-warning 'org-roam-logseq
                      "`org-roam-directory' is not a directory" :error) nil)
+   ;; TODO sanity check that pages and journal can be found
    (t))
 
 ;;;###autoload

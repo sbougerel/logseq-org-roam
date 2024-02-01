@@ -492,23 +492,30 @@ A [[test links]] matching headline.
        (org-roam-logseq--update-first-section plist)
        (should (equal result (buffer-string)))))))
 
+
+;; TODO mock internal functions instead?
 (ert-deftest org-roam-logseq--inventory-all--normal ()
   (let ((org-roam-directory default-directory)
         inventory
         logs)
     (mocker-let
-     ((org-roam-logseq--insert-file-contents
+     ((org-roam-logseq-file-p
+       (f)
+       ((:input '("a") :output t)
+        (:input '("b") :output t)
+        (:input '("c") :output t)))
+      (org-roam-logseq--insert-file-contents
        (f &optional v b e r)
-       ((:input '("a")
+       ((:input '("a" nil nil nil nil)
          :output-generator (lambda (f &optional v b e r)
                              (insert "* Typical Logseq page
 *")))
-        (:input '("b")
+        (:input '("b" nil nil nil nil)
          :output-generator (lambda (f &optional v b e r)
                              (insert "#+alias: d
 * Logseq page with alias
 *")))
-        (:input '("c")
+        (:input '("c" nil nil nil nil)
          :output-generator (lambda (f &optional v b e r)
                              (insert "#+title: Test note
 * Logseq page with title
@@ -517,15 +524,94 @@ A [[test links]] matching headline.
        (let ((standard-output (current-buffer)))
          (setq inventory
                (org-roam-logseq--inventory-all
-                '("a" "b" "c") t '(first-section file-links fuzzy-links)))))
-     (setq logs (buffer-string)))
+                '("a" "b" "c") t '(first-section file-links fuzzy-links))))
+       (setq logs (buffer-string))))
     (should (hash-table-p inventory))
     (should (equal (hash-table-count inventory) 3))
-    (should (equal (gethash "a" inventory 'not-found) nil))
+    (should (equal (gethash "a" inventory 'not-found)
+                   '(:hash "0402a679d81d52814c2f30094d1bcbf8aeb2da2c7b98a0624267585405219b76")))
     (should (equal (gethash "b" inventory 'not-found)
-                   '(:aliases ("d"))))
+                   '(:hash "651d9ddca6e5f8cfce534d1f4ae7f8cbb85a2dd1a6b942d0723f6a451cf67799"
+                     :first-section-p t
+                     :aliases ("d"))))
     (should (equal (gethash "c" inventory 'not-found)
-                   '(:title "Test note")))))
+                   '(:hash "b16e53419b3e9c1fabf6bdfa6476d4ab523e25b9e7ea14fa4a6a9c9ce3d3a8bc"
+                     :first-section-p t
+                     :title-point 1
+                     :title "Test note")))
+    (should (equal (substring logs 0 200)
+                   "** Inventory initially:
+3 files found in org-roam directory
+0 files being visited in a modified buffer will be skipped
+0 files are external to Logseq and will not be modified
+3 files have been parsed
+"))))
+
+(ert-deftest org-roam-logseq--inventory-update--no-change ()
+  (let ((org-roam-directory default-directory)
+        inventory
+        logs)
+    (mocker-let
+     ((org-roam-logseq-file-p
+       (f)
+       ((:input '("a") :output t)
+        (:input '("b") :output t)
+        (:input '("c") :output t)))
+      (org-roam-logseq--insert-file-contents
+       (f &optional v b e r)
+       :ordered nil
+       ((:input '("a" nil nil nil nil)
+         :occur 2
+         :output-generator (lambda (f &optional v b e r)
+                             (insert "* Typical Logseq page
+*")))
+        (:input '("b" nil nil nil nil)
+         :occur 2
+         :output-generator (lambda (f &optional v b e r)
+                             (insert "#+alias: d
+* Logseq page with alias
+*")))
+        (:input '("c" nil nil nil nil)
+         :occur 2
+         :output-generator (lambda (f &optional v b e r)
+                             (insert "#+title: Test note
+* Logseq page with title
+*"))))))
+     (with-temp-buffer
+       (let ((standard-output (current-buffer)))
+         (setq inventory
+               (org-roam-logseq--inventory-all
+                '("a" "b" "c") t
+                '(first-section file-links fuzzy-links)))))
+     (with-temp-buffer
+       (let ((standard-output (current-buffer)))
+         (org-roam-logseq--inventory-update
+          '("a" "b" "c")
+          inventory
+          '(first-section file-links fuzzy-links)))
+       (setq logs (buffer-string))))
+    (should (hash-table-p inventory))
+    (should (equal (hash-table-count inventory) 3))
+    (should (equal (gethash "a" inventory 'not-found)
+                   '(:hash "0402a679d81d52814c2f30094d1bcbf8aeb2da2c7b98a0624267585405219b76")))
+    (should (equal (gethash "b" inventory 'not-found)
+                   '(:hash "651d9ddca6e5f8cfce534d1f4ae7f8cbb85a2dd1a6b942d0723f6a451cf67799"
+                     :first-section-p t
+                     :aliases ("d"))))
+    (should (equal (gethash "c" inventory 'not-found)
+                   '(:hash "b16e53419b3e9c1fabf6bdfa6476d4ab523e25b9e7ea14fa4a6a9c9ce3d3a8bc"
+                     :first-section-p t
+                     :title-point 1
+                     :title "Test note")))
+    (should (equal (substring logs 0 53)
+                   "** Inventory update:
+3 updated files have been parsed"))))
+
+;; TODO test update all first sections, mocking internal functions
+;; TODO test create translate default
+;; TODO test create from
+;; TODO test log errors
+;; TODO test org-roam-logseq - mocking all internal functions
 
 (provide 'org-roam-logseq-tests)
 ;;; org-roam-logseq-tests.el ends here
