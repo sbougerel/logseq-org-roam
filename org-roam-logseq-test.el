@@ -1,4 +1,4 @@
-;;; org-roam-logseq-tests.el --- Description -*- lexical-binding: t; -*-
+;;; logseq-org-roam-tests.el --- Description -*- lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 2024 Sylvain Bougerel
 ;;
@@ -26,7 +26,7 @@
 
 ;;; Commentary:
 
-;;  Test 'org-roam-logseq'.
+;;  Test for 'logseq-org-roam'.
 
 ;;; Code:
 
@@ -34,13 +34,13 @@
 (require 'ert)
 (require 'mocker)
 
-(require 'org-roam-logseq)
+(require 'logseq-org-roam)
 
-(ert-deftest org-roam-logseq--inventory-init ()
-  ;; `org-roam-logseq--files-not-cached' find the difference between
+(ert-deftest logseq-org-roam--inventory-init ()
+  ;; `logseq-org-roam--files-not-cached' find the difference between
   ;; `org-roam-list-files' and the files present in the org-roam cache which
   ;; we'll have to mock here.
-  (let ((result (org-roam-logseq--inventory-init '("a" "b" "c" "d"))))
+  (let ((result (logseq-org-roam--inventory-init '("a" "b" "c" "d"))))
     (should (hash-table-p result))
     (should (equal (hash-table-count result) 4))
     (should (equal (gethash "a" result) nil))
@@ -48,7 +48,7 @@
     (should (equal (gethash "c" result) nil))
     (should (equal (gethash "d" result) nil))))
 
-(ert-deftest org-roam-logseq--inventory-from-cache ()
+(ert-deftest logseq-org-roam--inventory-from-cache ()
   (mocker-let
    ((org-roam-db-query (sql &rest args)
                        ((:input '([:select [file id title]
@@ -65,8 +65,8 @@
                                    :where (= node-id $s1)]
                                   "y")
                                 :output '(("e"))))))
-   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b" "c" "d")))
-          (count (org-roam-logseq--inventory-from-cache inventory)))
+   (let* ((inventory (logseq-org-roam--inventory-init '("a" "b" "c" "d")))
+          (count (logseq-org-roam--inventory-from-cache inventory)))
      (should (eq count 2))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 4))
@@ -80,13 +80,13 @@
                                                          :title "D"
                                                          :roam-aliases ("e")))))))
 
-(ert-deftest org-roam-logseq--inventory-mark-modified ()
+(ert-deftest logseq-org-roam--inventory-mark-modified ()
   (mocker-let
    ((find-buffer-visiting (f) ((:input '("a") :output 'a)
                                (:input '("b") :output nil)))
     (buffer-modified-p (b) ((:input '(a) :output t))))
-   (let* ((inventory (org-roam-logseq--inventory-init '("a" "b")))
-          (actual (org-roam-logseq--inventory-mark-modified '("a" "b") inventory)))
+   (let* ((inventory (logseq-org-roam--inventory-init '("a" "b")))
+          (actual (logseq-org-roam--inventory-mark-modified '("a" "b") inventory)))
      (should (eq actual 1))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 2))
@@ -95,39 +95,39 @@
      (should (equal (gethash "b" inventory 'not-found)
                     nil)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--empty ()
+(ert-deftest logseq-org-roam--parse-buffer--empty ()
   (with-temp-buffer
     (insert "")
     (org-mode)
-    (let ((actual (org-roam-logseq--parse-buffer
+    (let ((actual (logseq-org-roam--parse-buffer
                    nil '(first-section file-links fuzzy-links)))
           (expected nil))
       (should (equal actual expected)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--simple ()
+(ert-deftest logseq-org-roam--parse-buffer--simple ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 *")
     (org-mode)
-    (let ((actual (org-roam-logseq--parse-buffer
+    (let ((actual (logseq-org-roam--parse-buffer
                    nil '(first-section file-links fuzzy-links)))
           (expected nil))
       (should (equal actual expected)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--title-only ()
+(ert-deftest logseq-org-roam--parse-buffer--title-only ()
   (with-temp-buffer
     (insert "#+title: Test note
 * Typical Logseq page
 *")
     (org-mode)
-    (let ((actual (org-roam-logseq--parse-buffer
+    (let ((actual (logseq-org-roam--parse-buffer
                    nil '(first-section file-links fuzzy-links)))
           (expected '(:first-section-p t
                       :title-point 1
                       :title "Test note")))
       (should (equal actual expected)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--prop-only ()
+(ert-deftest logseq-org-roam--parse-buffer--prop-only ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -136,14 +136,14 @@
 * Typical Logseq page
 *")
     (org-mode)
-    (let ((actual (org-roam-logseq--parse-buffer
+    (let ((actual (logseq-org-roam--parse-buffer
                    nil '(first-section file-links fuzzy-links)))
           (expected '(:first-section-p t
                       :title-point 64
                       :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f")))
       (should (equal actual expected)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--heading-id ()
+(ert-deftest logseq-org-roam--parse-buffer--heading-id ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 :PROPERTIES:
@@ -151,12 +151,12 @@
 :END:
 *")
     (org-mode)
-    (let ((actual (org-roam-logseq--parse-buffer
+    (let ((actual (logseq-org-roam--parse-buffer
                    nil '(first-section file-links fuzzy-links)))
           (expected nil))
       (should (equal actual expected)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--aliases ()
+(ert-deftest logseq-org-roam--parse-buffer--aliases ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -166,7 +166,7 @@
 #+alias: a, B, c d, e
 *")
     (org-mode)
-    (let ((actual (org-roam-logseq--parse-buffer
+    (let ((actual (logseq-org-roam--parse-buffer
                    nil '(first-section file-links fuzzy-links)))
           (expected '(:first-section-p t
                       :title-point 88
@@ -176,7 +176,7 @@
                       :aliases ("a" "b" "c d" "e"))))
       (should (equal actual expected)))))
 
-(ert-deftest org-roam-logseq--parse-buffer--links ()
+(ert-deftest logseq-org-roam--parse-buffer--links ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -206,11 +206,11 @@ A [[test links]] matching headline.
 ")
     (org-mode)
     (mocker-let
-     ((org-roam-logseq--expand-file (p)
+     ((logseq-org-roam--expand-file (p)
                                     ((:input '("dir/note.org") :output-generator #'identity)))
       (org-roam-file-p (p)
                        ((:input '("dir/note.org") :output t :max-occur 2))))
-     (let ((actual (org-roam-logseq--parse-buffer
+     (let ((actual (logseq-org-roam--parse-buffer
                     nil '(first-section file-links fuzzy-links)))
            (expected '(:first-section-p t
                        :title-point 68
@@ -220,7 +220,7 @@ A [[test links]] matching headline.
                                (file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")))))
        (should (equal actual expected))))))
 
-(ert-deftest org-roam-logseq--parse-buffer--idempotent ()
+(ert-deftest logseq-org-roam--parse-buffer--idempotent ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -250,7 +250,7 @@ A [[test links]] matching headline.
 ")
     (org-mode)
     (mocker-let
-     ((org-roam-logseq--expand-file (p)
+     ((logseq-org-roam--expand-file (p)
                                     ((:input '("dir/note.org")
                                       :output-generator #'identity
                                       :max-occur 2)))
@@ -258,13 +258,13 @@ A [[test links]] matching headline.
                        ((:input '("dir/note.org")
                          :output t
                          :max-occur 4))))
-     (let* ((expected (org-roam-logseq--parse-buffer
+     (let* ((expected (logseq-org-roam--parse-buffer
                        nil '(first-section file-links fuzzy-links)))
-            (actual (org-roam-logseq--parse-buffer
+            (actual (logseq-org-roam--parse-buffer
                      expected '(first-section file-links fuzzy-links))))
        (should (equal actual expected))))))
 
-(ert-deftest org-roam-logseq--calculate-fuzzy-dict--with-conflicts ()
+(ert-deftest logseq-org-roam--calculate-fuzzy-dict--with-conflicts ()
   (let ((inventory (make-hash-table :test #'equal))
         (org-roam-directory default-directory)
         (files '("x" "y" "z")))
@@ -279,7 +279,7 @@ A [[test links]] matching headline.
                    :aliases ("e" "f")) inventory)
     (with-temp-buffer
       (let* ((standard-output (current-buffer))
-             (actual_dict (org-roam-logseq--calculate-fuzzy-dict
+             (actual_dict (logseq-org-roam--calculate-fuzzy-dict
                            files
                            inventory)))
         (should (= (hash-table-count actual_dict) 6))
@@ -296,7 +296,7 @@ A [[test links]] matching headline.
 - The title \"d\" in [[file:z][z]] conflicts with the alias in [[file:y][y]], links to \"d\" will not be converted.
 "))))))
 
-(ert-deftest org-roam-logseq--update-links ()
+(ert-deftest logseq-org-roam--update-links ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -331,7 +331,7 @@ A [[test links]] matching headline.
       (puthash "p" '(:id "B") inventory)
       (puthash "logseq" "p" fuzzy-dict)
       (mocker-let
-       ((org-roam-logseq--expand-file (p)
+       ((logseq-org-roam--expand-file (p)
                                       ((:input '("dir/note.org") :output-generator #'identity))))
        (let* ((links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")
                        (title 288 298 "Logseq" nil "[[Logseq]]")))
@@ -362,11 +362,11 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
               (expected t)
-              (actual (org-roam-logseq--update-links links inventory fuzzy-dict)))
+              (actual (logseq-org-roam--update-links links inventory fuzzy-dict)))
          (should (equal result (buffer-string)))
          (should (eq actual expected)))))))
 
-(ert-deftest org-roam-logseq--update-links--faulty ()
+(ert-deftest logseq-org-roam--update-links--faulty ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -399,12 +399,12 @@ A [[test links]] matching headline.
                     (title 288 298 "Logseq" nil "[[Logseq]]" "B")))
            (result (buffer-string)) ;; unchanged
            (expected 'mismatch-link)
-           (actual (org-roam-logseq--update-links links nil nil)))
+           (actual (logseq-org-roam--update-links links nil nil)))
       (should (equal result (buffer-string)))
       (should (eq actual expected)))))
 
 ;; TODO: reformat to make it look nicer.
-(ert-deftest org-roam-logseq--update-first-section--typical ()
+(ert-deftest logseq-org-roam--update-first-section--typical ()
   (with-temp-buffer
     (insert "* Typical Logseq page
 *")
@@ -419,19 +419,19 @@ A [[test links]] matching headline.
 :END:
 ")
                              "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"))))
-      (org-roam-logseq--buffer-title () ((:output "Test note"))))
+      (logseq-org-roam--buffer-title () ((:output "Test note"))))
      (org-mode)
-     (let* ((plist (org-roam-logseq--parse-buffer nil '(first-section)))
+     (let* ((plist (logseq-org-roam--parse-buffer nil '(first-section)))
             (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 #+title: Test note
 * Typical Logseq page
 *"))
-       (org-roam-logseq--update-first-section plist)
+       (logseq-org-roam--update-first-section plist)
        (should (equal result (buffer-string)))))))
 
-(ert-deftest org-roam-logseq--update-first-section--with-alias ()
+(ert-deftest logseq-org-roam--update-first-section--with-alias ()
   (with-temp-buffer
     (insert "#+alias: a, b, \"c d\"
 * Typical Logseq page
@@ -458,9 +458,9 @@ A [[test links]] matching headline.
                                  (beginning-of-line)
                                  (when (looking-at ":END:")
                                    (insert ":ROAM_ALIASES: a b \"c d\"\n"))))))
-      (org-roam-logseq--buffer-title () ((:output "Test note"))))
+      (logseq-org-roam--buffer-title () ((:output "Test note"))))
      (org-mode)
-     (let* ((plist (org-roam-logseq--parse-buffer nil '(first-section)))
+     (let* ((plist (logseq-org-roam--parse-buffer nil '(first-section)))
             (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :ROAM_ALIASES: a b \"c d\"
@@ -469,10 +469,10 @@ A [[test links]] matching headline.
 #+alias: a, b, \"c d\"
 * Typical Logseq page
 *"))
-       (org-roam-logseq--update-first-section plist)
+       (logseq-org-roam--update-first-section plist)
        (should (equal result (buffer-string)))))))
 
-(ert-deftest org-roam-logseq--update-first-section--missing-title ()
+(ert-deftest logseq-org-roam--update-first-section--missing-title ()
   (with-temp-buffer
     (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -480,31 +480,31 @@ A [[test links]] matching headline.
 * Typical Logseq page
 *")
     (mocker-let
-     ((org-roam-logseq--buffer-title () ((:output "Test note"))))
+     ((logseq-org-roam--buffer-title () ((:output "Test note"))))
      (org-mode)
-     (let* ((plist (org-roam-logseq--parse-buffer nil '(first-section)))
+     (let* ((plist (logseq-org-roam--parse-buffer nil '(first-section)))
             (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 #+title: Test note
 * Typical Logseq page
 *"))
-       (org-roam-logseq--update-first-section plist)
+       (logseq-org-roam--update-first-section plist)
        (should (equal result (buffer-string)))))))
 
 
 ;; TODO mock internal functions instead?
-(ert-deftest org-roam-logseq--inventory-all--normal ()
+(ert-deftest logseq-org-roam--inventory-all--normal ()
   (let ((org-roam-directory default-directory)
         inventory
         logs)
     (mocker-let
-     ((org-roam-logseq-file-p
+     ((logseq-org-roam-file-p
        (f)
        ((:input '("a") :output t)
         (:input '("b") :output t)
         (:input '("c") :output t)))
-      (org-roam-logseq--insert-file-contents
+      (logseq-org-roam--insert-file-contents
        (f &optional v b e r)
        ((:input '("a" nil nil nil nil)
          :output-generator (lambda (f &optional v b e r)
@@ -523,7 +523,7 @@ A [[test links]] matching headline.
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
          (setq inventory
-               (org-roam-logseq--inventory-all
+               (logseq-org-roam--inventory-all
                 '("a" "b" "c") t '(first-section file-links fuzzy-links))))
        (setq logs (buffer-string))))
     (should (hash-table-p inventory))
@@ -547,17 +547,17 @@ A [[test links]] matching headline.
 3 files have been parsed
 "))))
 
-(ert-deftest org-roam-logseq--inventory-update--no-change ()
+(ert-deftest logseq-org-roam--inventory-update--no-change ()
   (let ((org-roam-directory default-directory)
         inventory
         logs)
     (mocker-let
-     ((org-roam-logseq-file-p
+     ((logseq-org-roam-file-p
        (f)
        ((:input '("a") :output t)
         (:input '("b") :output t)
         (:input '("c") :output t)))
-      (org-roam-logseq--insert-file-contents
+      (logseq-org-roam--insert-file-contents
        (f &optional v b e r)
        :ordered nil
        ((:input '("a" nil nil nil nil)
@@ -580,12 +580,12 @@ A [[test links]] matching headline.
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
          (setq inventory
-               (org-roam-logseq--inventory-all
+               (logseq-org-roam--inventory-all
                 '("a" "b" "c") t
                 '(first-section file-links fuzzy-links)))))
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
-         (org-roam-logseq--inventory-update
+         (logseq-org-roam--inventory-update
           '("a" "b" "c")
           inventory
           '(first-section file-links fuzzy-links)))
@@ -611,7 +611,7 @@ A [[test links]] matching headline.
 ;; TODO test create translate default
 ;; TODO test create from
 ;; TODO test log errors
-;; TODO test org-roam-logseq - mocking all internal functions
+;; TODO test logseq-org-roam - mocking all internal functions
 
-(provide 'org-roam-logseq-tests)
-;;; org-roam-logseq-tests.el ends here
+(provide 'logseq-org-roam-tests)
+;;; logseq-org-roam-tests.el ends here

@@ -1,9 +1,9 @@
-;;; org-roam-logseq.el --- Org-roam Logseq converter -*- coding: utf-8; lexical-binding: t; -*-
+;;; logseq-org-roam.el --- Logseq Org-roam converter -*- coding: utf-8; lexical-binding: t; -*-
 
 ;; Copyright (C) 2024, Sylvain Bougerel
 
 ;; Author: Sylvain Bougerel
-;; URL: https://github.com/idanov/org-roam-logseq.el/
+;; URL: https://github.com/idanov/logseq-org-roam.el/
 ;; Keywords: tools outlines
 ;; Version: 1.0.0
 ;; Package-Requires: ((org-roam "2.2.2") (emacs "27.2") (org "9.3"))
@@ -35,10 +35,10 @@
 ;; modifications have been identified before they are performed to reduce the
 ;; number of passes to the minimum.
 ;;
-;; This package features a single point of entry: `org-roam-logseq-import' which
+;; This package features a single point of entry: `logseq-org-roam-import' which
 ;; examines the notes in your org-roam directory and prompts to import into
 ;; org-roam all notes that were updated or captured in Logseq.
-;; `org-roam-logseq-import' can run upon visiting a file and it will do a fine
+;; `logseq-org-roam-import' can run upon visiting a file and it will do a fine
 ;; job, however it's best to run it a single time, after the notes from Logseq
 ;; are added to org-roam.
 ;;
@@ -71,7 +71,7 @@
 ;; LICENSE
 ;;
 ;; This code is a fork of
-;;    https://github.com/idanov/org-roam-logseq/ which is
+;;    https://github.com/idanov/logseq-org-roam/ which is
 ;; licensed under MIT, so this code is also MIT licensed.
 ;;
 ;; The work from Ivan Danov is a derivative work of
@@ -107,13 +107,13 @@
 (require 'org)
 (require 'org-roam)
 
-(defgroup org-roam-logseq nil
+(defgroup logseq-org-roam nil
   "Convert Logseq files to `org-roam' files."
   :group 'org-roam)
 
-;;;###autoload (put 'org-roam-logseq-link-types 'safe-local-variable #'symbolp)
-(defcustom org-roam-logseq-link-types nil
-  "The kind of links `org-roam-logseq' should convert.
+;;;###autoload (put 'logseq-org-roam-link-types 'safe-local-variable #'symbolp)
+(defcustom logseq-org-roam-link-types nil
+  "The kind of links `logseq-org-roam' should convert.
 Value is a symbol, only the following are recognized:
 - \\='files
 - \\='fuzzy
@@ -133,7 +133,7 @@ ID links are of 2 types:
 
 Matching rules for each kind of links are as follows.
 
-When dealing with file links, `org-roam-logseq' ignores links
+When dealing with file links, `logseq-org-roam' ignores links
 that do not contain a description since Logseq always populates
 it when referencing another page.  It also ignores links that
 contain search options since Logseq does not create those.  And
@@ -177,15 +177,15 @@ parent '../' to an absolute path to the root of the graph.
 Logseq does not fix this path, even after the page is created.
 The user must fix it manually each time.
 
-On the other hand `org-roam-logseq' cares to implement the
+On the other hand `logseq-org-roam' cares to implement the
 complex matching rules set by `org-roam' to convert the right
 fuzzy links, making Logseq and `org-roam' mostly interoperable
 even when using fuzzy links in Logseq."
   :type 'symbol
   :options '(fuzzy file both)
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
-(defcustom org-roam-logseq-date-like
+(defcustom logseq-org-roam-date-like
   (rx string-start (or (seq (= 4 (in digit)) (= 2 (in "_-" blank) (= 2 (in digit))))
                        (seq (= 2 (** 1 2 (in digit)) (in "/._-" blank))
                             (or (= 4 (in digit)) (= 2 (in digit))))
@@ -210,68 +210,68 @@ that it matches the setting :journal/page-title-format in Logseq
 if it does not already.
 
 Note that even if the regex above matches,
-`org-roam-logseq-create-translate-default' will still attempt to
+`logseq-org-roam-create-translate-default' will still attempt to
 parse it with `parse-time-string' and verify that it is actually
 a real date (e.g. 2023-02-31 won't be accepted as a date)."
   :type 'string
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
-;;;###autoload (put 'org-roam-logseq-create-translate-link 'safe-local-variable #'symbolp)
-(defcustom org-roam-logseq-create-translate
-  #'org-roam-logseq-create-translate-default
+;;;###autoload (put 'logseq-org-roam-create-translate-link 'safe-local-variable #'symbolp)
+(defcustom logseq-org-roam-create-translate
+  #'logseq-org-roam-create-translate-default
   "Function translating a fuzzy link to a file path.
 
 By default, it will attempt to translate a fuzzy link path to a
 file path under the pages directory (see
-`org-roam-logseq-pages-directory').  If the fuzzy link represents
+`logseq-org-roam-pages-directory').  If the fuzzy link represents
 a date, it will translate the link to a path under the journal
-directory (see `org-roam-logseq-journals-directory').  To tell
-apart dates from other strings, it uses `org-roam-logseq-date-p'.
+directory (see `logseq-org-roam-journals-directory').  To tell
+apart dates from other strings, it uses `logseq-org-roam-date-p'.
 
 Special characters in the link path are also replaced, see:
-`org-roam-logseq-create-replace'.
+`logseq-org-roam-create-replace'.
 
 Setting this value to nil disables creation of pages for fuzzy
 links"
   :type 'symbol
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
 ;; TODO: filter files futher from `org-roam-list-files'
-;;;###autoload (put 'org-roam-logseq-pages-directory 'safe-local-variable #'string)
-(defcustom org-roam-logseq-pages-directory "pages"
+;;;###autoload (put 'logseq-org-roam-pages-directory 'safe-local-variable #'string)
+(defcustom logseq-org-roam-pages-directory "pages"
   "Set this variable to mirror Logseq :pages-directory setting."
   :type 'string
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
-;;;###autoload (put 'org-roam-logseq-journals-directory 'safe-local-variable #'string)
-(defcustom org-roam-logseq-journals-directory "journals"
+;;;###autoload (put 'logseq-org-roam-journals-directory 'safe-local-variable #'string)
+(defcustom logseq-org-roam-journals-directory "journals"
   "Set this variable to mirror Logseq :journals-directory setting."
   :type 'string
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
-;;;###autoload (put 'org-roam-logseq-create-accept 'safe-local-variable #'symbol)
-(defcustom org-roam-logseq-create-accept #'org-roam-logseq-pages-p
+;;;###autoload (put 'logseq-org-roam-create-accept 'safe-local-variable #'symbol)
+(defcustom logseq-org-roam-create-accept #'logseq-org-roam-pages-p
   "Tells aparts paths that should be created from paths that should not.
 When non-nil, it is called as a function with a single argument:
 the path.  It is expected to return a boolean value.  If non-nil,
 the path is accepted and the file is created.
 
-The default value (`org-roam-logseq-creat-pages-only') will not
+The default value (`logseq-org-roam-creat-pages-only') will not
 create journal entires.  If you want journal entries to be
 created too, you can simply set this to
-`org-roam-logseq-create-logseq'.  Note that if you set it to nil,
+`logseq-org-roam-create-logseq'.  Note that if you set it to nil,
 any non-existant Org file under `org-roam-directory' can be
 created."
   :type 'symbol
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
 ;;;###autoload
-(defcustom org-roam-logseq-updated-hook nil
-  "Hook called  by `org-roam-logseq' if any files was updated."
+(defcustom logseq-org-roam-updated-hook nil
+  "Hook called  by `logseq-org-roam' if any files was updated."
   :type 'hook
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
-(defconst org-roam-logseq--named
+(defconst logseq-org-roam--named
   '(babel-call
     center-block
     dynamic-block
@@ -290,29 +290,29 @@ created."
     verse-block)
   "List of org-elements that can be affiliated with a :name attribute.")
 
-(defconst org-roam-logseq--log-buffer-name "*Org-roam Logseq*"
+(defconst logseq-org-roam--log-buffer-name "*Org-roam Logseq*"
   "Name for the log buffer.")
 
-(defcustom org-roam-logseq-create-replace '(("[\\/-.,]" . "_"))
+(defcustom logseq-org-roam-create-replace '(("[\\/-.,]" . "_"))
   "Alist specifying replacements for fuzzy links.
 
 Car and cdr of each cons will be given as arguments to
 `replace-regexp-in-string' when converting fuzzy links to paths
-in `org-roam-logseq-create-translate-default'."
+in `logseq-org-roam-create-translate-default'."
   :type 'alist
-  :group 'org-roam-logseq)
+  :group 'logseq-org-roam)
 
 ;; Aliased file function for mocking as they could interact with the file system
-(defalias 'org-roam-logseq--expand-file #'expand-file-name)
-(defalias 'org-roam-logseq--find-file-noselect #'find-file-noselect)
-(defalias 'org-roam-logseq--insert-file-contents #'insert-file-contents)
+(defalias 'logseq-org-roam--expand-file #'expand-file-name)
+(defalias 'logseq-org-roam--find-file-noselect #'find-file-noselect)
+(defalias 'logseq-org-roam--insert-file-contents #'insert-file-contents)
 
-(defmacro org-roam-logseq--with-log-buffer (&rest body)
+(defmacro logseq-org-roam--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
   (declare (debug t))
   `(let* ((standard-output
            (with-current-buffer
-               (get-buffer-create org-roam-logseq--log-buffer-name)
+               (get-buffer-create logseq-org-roam--log-buffer-name)
              (if (= (point-min) (point-max))
                  (insert "\n\n"))
              (kill-all-local-variables) ;; return to fundamental for logging
@@ -333,7 +333,7 @@ in `org-roam-logseq-create-translate-default'."
          (org-mode) ;; back to org-mode
          (goto-char (point-max))))))
 
-(defmacro org-roam-logseq--with-edit-buffer (file &rest body)
+(defmacro logseq-org-roam--with-edit-buffer (file &rest body)
   "Find an existing buffer for FILE, set `org-mode' and execute BODY.
 If the buffer is new, `org-mode' startup is inhibited.  This
 macro does not save the file, but will *always* kill the buffer
@@ -344,7 +344,7 @@ if it was previously created."
            (or existing-buffer
                (let ((auto-mode-alist nil)
                      (find-file-hook nil))
-                 (org-roam-logseq--find-file-noselect ,file)))))
+                 (logseq-org-roam--find-file-noselect ,file)))))
      (unwind-protect
          (with-current-buffer buf
            (unless (derived-mode-p 'org-mode)
@@ -353,7 +353,7 @@ if it was previously created."
            ,@body)
        (unless existing-buffer (kill-buffer buf)))))
 
-(defmacro org-roam-logseq--with-temp-buffer (file &rest body)
+(defmacro logseq-org-roam--with-temp-buffer (file &rest body)
   "Visit FILE into an `org-mode' temp buffer and execute BODY.
 If the buffer is new, `org-mode' startup is inhibited.  This
 macro does not save the file, but will kill the buffer if it was
@@ -362,10 +362,10 @@ previously created."
   `(with-temp-buffer
      (delay-mode-hooks
        (let ((org-inhibit-startup t)) (org-mode)))
-     (org-roam-logseq--insert-file-contents ,file)
+     (logseq-org-roam--insert-file-contents ,file)
      ,@body))
 
-(defmacro org-roam-logseq--catch-fun (sym fun &rest body)
+(defmacro logseq-org-roam--catch-fun (sym fun &rest body)
   "Catch SYM during BODY's execution and pass it to FUN."
   (declare (indent 2) (debug t))
   (let ((result (make-symbol "result")))
@@ -373,17 +373,17 @@ previously created."
        (when (and ,result (symbolp ,result))
          (,fun ,result)))))
 
-(defun org-roam-logseq--fl (file)
+(defun logseq-org-roam--fl (file)
   "Make an org link to FILE relative to `org-roam-directory'."
   (format "[[file:%s][%s]]"
           file
           (file-relative-name file org-roam-directory)))
 
-(defun org-roam-logseq-date-p (maybe-date)
+(defun logseq-org-roam-date-p (maybe-date)
   "Return non-nil if MAYBE-DATE is an actual date string.
 
-Used in `org-roam-logseq-create-translate-default'."
-  (if-let ((date-like (string-match-p org-roam-logseq-date-like
+Used in `logseq-org-roam-create-translate-default'."
+  (if-let ((date-like (string-match-p logseq-org-roam-date-like
                                       maybe-date))
            (time (parse-time-string maybe-date))
            (year (nth 5 time))
@@ -394,22 +394,22 @@ Used in `org-roam-logseq-create-translate-default'."
                                           (date-to-time date-string))))
       (equal date-string real-date)))
 
-(defun org-roam-logseq-pages-p (file)
+(defun logseq-org-roam-pages-p (file)
   "Return non-nil if FILE path is under the Logseq pages directory."
   (file-in-directory-p file
-                       (expand-file-name org-roam-logseq-pages-directory
+                       (expand-file-name logseq-org-roam-pages-directory
                                          org-roam-directory)))
 
-(defun org-roam-logseq-file-p (file)
+(defun logseq-org-roam-file-p (file)
   "Return non-nil if FILE path is under the Logseq pages directory."
   (or (file-in-directory-p file
-                           (expand-file-name org-roam-logseq-pages-directory
+                           (expand-file-name logseq-org-roam-pages-directory
                                              org-roam-directory))
       (file-in-directory-p file
-                           (expand-file-name org-roam-logseq-journals-directory
+                           (expand-file-name logseq-org-roam-journals-directory
                                              org-roam-directory))))
 
-(defun org-roam-logseq--image-file-p (file)
+(defun logseq-org-roam--image-file-p (file)
   "Non-nil if FILE is a supported image type."
   ;; This function exists purely because `image-supported-file-p' has made
   ;; `image-type-from-file-name' obsolete since Emacs 29.1; while it is not
@@ -425,18 +425,18 @@ Used in `org-roam-logseq-create-translate-default'."
                    (image-type-available-p (setq type (cdr elem))))
 	  (throw 'found type))))))
 
-(defun org-roam-logseq--value-string-p (element)
+(defun logseq-org-roam--value-string-p (element)
   "Return non-nil if ELEMENT has a string value that is not empty."
   (and (org-element-property :value element)
        (not (string-empty-p (org-element-property :value element)))))
 
-(defun org-roam-logseq--inventory-init (files)
+(defun logseq-org-roam--inventory-init (files)
   "Initialise inventory with FILES."
   (let ((inventory (make-hash-table :test #'equal)))
     (mapc (lambda (elem) (puthash elem nil inventory)) files)
     inventory))
 
-(defun org-roam-logseq--inventory-from-cache (inventory)
+(defun logseq-org-roam--inventory-from-cache (inventory)
   "Populate INVENTORY with `org-roam' cache for FILES.
 Return the number of files whose metadata was retreived from the
 cache."
@@ -461,11 +461,11 @@ cache."
                    inventory))))
     count))
 
-(defun org-roam-logseq--inventory-mark-external (files inventory)
+(defun logseq-org-roam--inventory-mark-external (files inventory)
   "Mark FILES in INVENTORY that are not Logseq files."
   (let ((count 0))
     (mapc (lambda (file)
-            (unless (org-roam-logseq-file-p file)
+            (unless (logseq-org-roam-file-p file)
               (setq count (1+ count))
               (let* ((plist (gethash file inventory))
                      (new_plist (plist-put plist :external-p t)))
@@ -473,7 +473,7 @@ cache."
           files)
     count))
 
-(defun org-roam-logseq--inventory-mark-modified (files inventory)
+(defun logseq-org-roam--inventory-mark-modified (files inventory)
   "Update INVENTORY with modified buffer visiting any FILES.
 Return the number of files from INVENTORY that are currently
 being modified in a buffer."
@@ -487,7 +487,7 @@ being modified in a buffer."
           (puthash file new_plist inventory))))
     count))
 
-(defun org-roam-logseq--parse-first-section-properties (section plist)
+(defun logseq-org-roam--parse-first-section-properties (section plist)
   "Return updated PLIST based on first SECTION properties."
   (org-element-map section 'property-drawer
     (lambda (property-drawer)
@@ -506,12 +506,12 @@ being modified in a buffer."
           (let ((key (org-element-property :key node-property)))
             (cond
              ((and (equal "ID" key)
-                   (org-roam-logseq--value-string-p node-property))
+                   (logseq-org-roam--value-string-p node-property))
               (setq plist (plist-put plist :id
                                      (org-element-property :value
                                                            node-property))))
              ((and (equal "ROAM_ALIASES" key)
-                   (org-roam-logseq--value-string-p node-property))
+                   (logseq-org-roam--value-string-p node-property))
               (setq plist (plist-put plist :roam-aliases
                                      (split-string-and-unquote
                                       (downcase
@@ -520,7 +520,7 @@ being modified in a buffer."
                                         node-property))))))))))))
   plist)
 
-(defun org-roam-logseq--parse-first-section-keywords (section plist)
+(defun logseq-org-roam--parse-first-section-keywords (section plist)
   "Return updated PLIST based on first SECTION keywords."
   (org-element-map section 'keyword
     (lambda (keyword)
@@ -529,11 +529,11 @@ being modified in a buffer."
          ((equal "TITLE" key)
           (setq plist (plist-put plist :title-point
                                  (org-element-property :begin keyword)))
-          (when (org-roam-logseq--value-string-p keyword)
+          (when (logseq-org-roam--value-string-p keyword)
             (setq plist (plist-put plist :title
                                    (org-element-property :value keyword)))))
          ((and (equal "ALIAS" key)
-               (org-roam-logseq--value-string-p keyword))
+               (logseq-org-roam--value-string-p keyword))
           ;; TODO: support anycase aliases, to ensure they appear in the same
           ;; case in ROAM_ALIASES.  This should be done with computing union /
           ;; diff.
@@ -544,7 +544,7 @@ being modified in a buffer."
                                   "\\s-*,\\s-*"))))))))
   plist)
 
-(defun org-roam-logseq--parse-first-section (data plist)
+(defun logseq-org-roam--parse-first-section (data plist)
   "Return updated PLIST based on first section of DATA."
   (declare (pure t) (side-effect-free t))
   (cond
@@ -559,11 +559,11 @@ being modified in a buffer."
    (t
     (setq plist (plist-put plist :first-section-p t))
     (let ((section (caddr data)))
-      (setq plist (org-roam-logseq--parse-first-section-properties section plist))
-      (setq plist (org-roam-logseq--parse-first-section-keywords section plist)))
+      (setq plist (logseq-org-roam--parse-first-section-properties section plist))
+      (setq plist (logseq-org-roam--parse-first-section-keywords section plist)))
     plist)))
 
-(defun org-roam-logseq--parse-file-links (data plist)
+(defun logseq-org-roam--parse-file-links (data plist)
   "Return updated PLIST based on file links in DATA."
   (let ((links (plist-get plist :links)))
     (org-element-map data 'link
@@ -572,7 +572,7 @@ being modified in a buffer."
                    (org-element-property :contents-begin link)
                    (not (org-element-property :search-option link)))
           (let* ((path (org-element-property :path link))
-                 (true-path (org-roam-logseq--expand-file path)))
+                 (true-path (logseq-org-roam--expand-file path)))
             ;; Convert only links that point to org-roam files
             (when (org-roam-file-p true-path)
               (let* ((descr (buffer-substring-no-properties
@@ -586,7 +586,7 @@ being modified in a buffer."
     (when links (setq plist (plist-put plist :links links))))
   plist)
 
-(defun org-roam-logseq--parse-fuzzy-links (data plist)
+(defun logseq-org-roam--parse-fuzzy-links (data plist)
   "Return updated PLIST based on fuzzy links in DATA.
 This function ensures that we do not convert fuzzy links that
 already match internal links; they take precedence over external
@@ -594,7 +594,7 @@ ID links."
   (let ((links (plist-get plist :links))
         (text-targets (make-hash-table :test #'equal)))
     (org-element-map data (append '(link target headline)
-                                  org-roam-logseq--named)
+                                  logseq-org-roam--named)
       (lambda (element)
         (let ((type (org-element-type element)))
           (if-let ((name (org-element-property :name element)))
@@ -616,7 +616,7 @@ ID links."
                        (string-match "\\`\\*" path)
                        ;; When the link has no content, ignore image types
                        (and (not content)
-                            (org-roam-logseq--image-file-p path)))
+                            (logseq-org-roam--image-file-p path)))
                 (let* ((descr (if content
                                   (buffer-substring-no-properties
                                    (org-element-property :contents-begin element)
@@ -634,7 +634,7 @@ ID links."
     (when links (setq plist (plist-put plist :links links))))
   plist)
 
-(defun org-roam-logseq--parse-buffer (plist parts)
+(defun logseq-org-roam--parse-buffer (plist parts)
   "Return updated PLIST based on current buffer's content.
 This function updates PLIST with based on selected PARTS, a list
 of keywords which defaults to \\='(first-section file-links
@@ -642,16 +642,16 @@ fuzzy-links)."
   (org-with-wide-buffer
    (let* ((data (org-element-parse-buffer)))
      (when (memq 'first-section parts)
-       (setq plist (org-roam-logseq--parse-first-section data plist)))
+       (setq plist (logseq-org-roam--parse-first-section data plist)))
      ;; links are never updated for external files
      (unless (plist-get plist :external-p)
        (when (memq 'file-links parts)
-         (setq plist (org-roam-logseq--parse-file-links data plist)))
+         (setq plist (logseq-org-roam--parse-file-links data plist)))
        (when (memq 'fuzzy-links parts)
-         (setq plist (org-roam-logseq--parse-fuzzy-links data plist))))))
+         (setq plist (logseq-org-roam--parse-fuzzy-links data plist))))))
   plist)
 
-(defun org-roam-logseq--parse-files (files inventory parts)
+(defun logseq-org-roam--parse-files (files inventory parts)
   "Populate INVENTORY by parsing content of FILES.
 Restrict parsing to PARTS if provided.  Return the number of files
 that were parsed."
@@ -664,21 +664,21 @@ that were parsed."
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
           (setq count (1+ count))
-          (org-roam-logseq--catch-fun
-              'fault (lambda (err)
-                       (puthash file
-                                (plist-put plist :parse-error err)
-                                inventory)))
-          (org-roam-logseq--with-temp-buffer file
-            (let ((new_plist (plist-put plist :hash
-                                        (secure-hash 'sha256
-                                                     (current-buffer)))))
-              (setq new_plist
-                    (org-roam-logseq--parse-buffer new_plist parts))
-              (puthash file new_plist inventory))))))
+          (logseq-org-roam--catch-fun
+           'fault (lambda (err)
+                    (puthash file
+                             (plist-put plist :parse-error err)
+                             inventory)))
+          (logseq-org-roam--with-temp-buffer file
+                                             (let ((new_plist (plist-put plist :hash
+                                                                         (secure-hash 'sha256
+                                                                                      (current-buffer)))))
+                                               (setq new_plist
+                                                     (logseq-org-roam--parse-buffer new_plist parts))
+                                               (puthash file new_plist inventory))))))
     count))
 
-(defun org-roam-logseq--inventory-all (files force parts)
+(defun logseq-org-roam--inventory-all (files force parts)
   "Build inventory of `org-roam' metadata for FILES.
 Returns a hashtable mapping absolute paths to a plist describing
 relevant metadata to convert Logseq files to `org-roam'.  The
@@ -693,7 +693,7 @@ The argument PARTS ensures that the function only parses the
 necessary parts of each files."
   (princ "** Inventory initially:\n")
   (let* ((start (current-time))
-         (inventory (org-roam-logseq--inventory-init files))
+         (inventory (logseq-org-roam--inventory-init files))
          count_cached
          count_external
          count_modified
@@ -701,13 +701,13 @@ necessary parts of each files."
          elapsed)
     (unless force
       (setq count_cached
-            (org-roam-logseq--inventory-from-cache inventory)))
+            (logseq-org-roam--inventory-from-cache inventory)))
     (setq count_modified
-          (org-roam-logseq--inventory-mark-modified files inventory))
+          (logseq-org-roam--inventory-mark-modified files inventory))
     (setq count_external
-          (org-roam-logseq--inventory-mark-external files inventory))
+          (logseq-org-roam--inventory-mark-external files inventory))
     (setq count_parsed
-          (org-roam-logseq--parse-files files inventory parts))
+          (logseq-org-roam--parse-files files inventory parts))
     (setq elapsed (float-time (time-subtract (current-time) start)))
     (princ
      (concat
@@ -725,14 +725,14 @@ necessary parts of each files."
       (format "This took %.3f seconds\n" elapsed)))
     inventory))
 
-(defun org-roam-logseq--inventory-update (files inventory parts)
+(defun logseq-org-roam--inventory-update (files inventory parts)
   "Update INVENTORY by reparsing FILES."
   (princ "** Inventory update:\n")
   (let* ((start (current-time))
          count_parsed
          elapsed)
     (setq count_parsed
-          (org-roam-logseq--parse-files files inventory parts))
+          (logseq-org-roam--parse-files files inventory parts))
     (setq elapsed (float-time (time-subtract (current-time) start)))
     (princ
      (concat
@@ -741,7 +741,7 @@ necessary parts of each files."
       (format "This took %.3f seconds\n" elapsed)))
     inventory))
 
-(defun org-roam-logseq--calculate-fuzzy-dict (files inventory)
+(defun logseq-org-roam--calculate-fuzzy-dict (files inventory)
   "Map titles and aliases of FILES to keys in INVENTORY.
 This function ensures that titles and aliases found across all
 files are unique.  If any 2 titles or alias conflicts with each
@@ -783,20 +783,20 @@ were found."
                   (princ (concat "- The "
                                  (if this-title-p "title" "alias")
                                  " \"" target "\" in "
-                                 (org-roam-logseq--fl this-file)
+                                 (logseq-org-roam--fl this-file)
                                  " conflicts with the "
                                  (if other-title-p "title" "alias")
                                  " in "
-                                 (org-roam-logseq--fl other-file)
+                                 (logseq-org-roam--fl other-file)
                                  ", links to \"" target
                                  "\" will not be converted.\n")))))))))
     dict))
 
-(defun org-roam-logseq--buffer-title ()
+(defun logseq-org-roam--buffer-title ()
   "Return a title based on current buffer's file name."
   (file-name-base (buffer-file-name)))
 
-(defun org-roam-logseq--update-first-section (plist)
+(defun logseq-org-roam--update-first-section (plist)
   "Update current buffer first section based on PLIST.
 This function returns the amount of characters added to the
 buffer during the update."
@@ -812,7 +812,7 @@ buffer during the update."
        (org-id-get-create))
      (unless (plist-get plist :title)
        ;; TODO: handle case where title keyword is present but empty
-       (let ((title (org-roam-logseq--buffer-title)))
+       (let ((title (logseq-org-roam--buffer-title)))
          (goto-char (+ (or (plist-get plist :title-point) beg)
                        (- (buffer-size) start-size)
                        (if first-section-p 0 -1)))
@@ -828,7 +828,7 @@ buffer during the update."
        (unless (looking-at "\n") (throw 'fault 'mismatch-first-section))
        (delete-char 1)))))
 
-(defun org-roam-logseq--update-links (links inventory fuzzy-dict)
+(defun logseq-org-roam--update-links (links inventory fuzzy-dict)
   "Convert LINKS in current buffer to a target in INVENTORY.
 This function returns t or an error code if there was an issue
 updating the buffer.
@@ -845,7 +845,7 @@ only with file links, this hashtable is not used."
     (sort links (lambda (a b) (> (nth 1 a) (nth 1 b))))
     (pcase-dolist (`(,type ,beg ,end ,path ,descr _) links)
       (when-let ((id (if (eq 'file type)
-                         (plist-get (gethash (org-roam-logseq--expand-file path)
+                         (plist-get (gethash (logseq-org-roam--expand-file path)
                                              inventory)
                                     :id)
                        ;; title type: fuzzy-dict's key can be \\='conflict
@@ -863,7 +863,7 @@ only with file links, this hashtable is not used."
               (insert (concat "[[id:" id "][" path "]]")))))))
     t))
 
-(defun org-roam-logseq--update-all-first-sections (files inventory)
+(defun logseq-org-roam--update-all-first-sections (files inventory)
   "Update the first sections of all FILES according to INVENTORY.
 After the update is completed, we update inventory with the new information."
   (let (updated-files log-p)
@@ -880,26 +880,26 @@ After the update is completed, we update inventory with the new information."
                          ;; TODO store diff and union instead?
                          (not (seq-difference (plist-get plist :aliases)
                                               (plist-get plist :roam-aliases)))))
-          (org-roam-logseq--catch-fun
-              'fault (lambda (err)
-                       (puthash file
-                                (plist-put plist :update-error err)
-                                inventory))
-            (org-roam-logseq--with-edit-buffer file
-              (unless (equal (plist-get plist :hash)
-                             (secure-hash 'sha256 (current-buffer)))
-                (throw 'fault 'hash-mismatch))
-              (org-roam-logseq--update-first-section plist)
-              (when (buffer-modified-p)
-                (save-buffer)  ;; NOTE: runs org-roam hook and formatters
-                (push file updated-files)
-                (setq log-p t)
-                (princ (concat "- Updated " (org-roam-logseq--fl file) "\n"))))))))
+          (logseq-org-roam--catch-fun
+           'fault (lambda (err)
+                    (puthash file
+                             (plist-put plist :update-error err)
+                             inventory))
+           (logseq-org-roam--with-edit-buffer file
+                                              (unless (equal (plist-get plist :hash)
+                                                             (secure-hash 'sha256 (current-buffer)))
+                                                (throw 'fault 'hash-mismatch))
+                                              (logseq-org-roam--update-first-section plist)
+                                              (when (buffer-modified-p)
+                                                (save-buffer)  ;; NOTE: runs org-roam hook and formatters
+                                                (push file updated-files)
+                                                (setq log-p t)
+                                                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
     (unless log-p
       (princ "No updates found\n"))
     updated-files))
 
-(defun org-roam-logseq--update-all-links (files inventory fuzzy-dict)
+(defun logseq-org-roam--update-all-links (files inventory fuzzy-dict)
   "Update the links in FILES according to INVENTORY.
 Return non-nil if any file was updated.
 
@@ -916,56 +916,56 @@ only with file links, this hashtable is nil."
                     (plist-get plist :cache-p)
                     (plist-get plist :update-error)
                     (not (plist-get plist :links))) ;; minimal check
-          (org-roam-logseq--catch-fun
-              'fault (lambda (err)
-                       (puthash file
-                                (plist-put plist :update-error err)
-                                inventory))
-            (org-roam-logseq--with-edit-buffer file
-              (unless (equal (plist-get plist :hash)
-                             (secure-hash 'sha256 (current-buffer)))
-                (throw 'fault 'hash-mismatch))
-              (org-roam-logseq--update-links plist inventory fuzzy-dict)
-              (when (buffer-modified-p)
-                (save-buffer) ;; NOTE: important to run org-roam hook
-                (setq updates-p t)
-                (setq log-p t)
-                (princ (concat "- Updated " (org-roam-logseq--fl file) "\n"))))))))
+          (logseq-org-roam--catch-fun
+           'fault (lambda (err)
+                    (puthash file
+                             (plist-put plist :update-error err)
+                             inventory))
+           (logseq-org-roam--with-edit-buffer file
+                                              (unless (equal (plist-get plist :hash)
+                                                             (secure-hash 'sha256 (current-buffer)))
+                                                (throw 'fault 'hash-mismatch))
+                                              (logseq-org-roam--update-links plist inventory fuzzy-dict)
+                                              (when (buffer-modified-p)
+                                                (save-buffer) ;; NOTE: important to run org-roam hook
+                                                (setq updates-p t)
+                                                (setq log-p t)
+                                                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
     (unless log-p
       (princ "No links to update\n"))
     updates-p))
 
-(defun org-roam-logseq-create-translate-default (slug)
+(defun logseq-org-roam-create-translate-default (slug)
   "Transform SLUG into a file path."
   (let ((normalized slug))
-    (pcase-dolist (`(,regex . ,rep) org-roam-logseq-create-replace)
+    (pcase-dolist (`(,regex . ,rep) logseq-org-roam-create-replace)
       (setq normalized (replace-regexp-in-string regex rep normalized)))
     (concat
-     (org-roam-logseq--expand-file
-      normalized (org-roam-logseq--expand-file
-                  (if (org-roam-logseq-date-p slug)
-                      org-roam-logseq-journals-directory
-                    org-roam-logseq-pages-directory)
+     (logseq-org-roam--expand-file
+      normalized (logseq-org-roam--expand-file
+                  (if (logseq-org-roam-date-p slug)
+                      logseq-org-roam-journals-directory
+                    logseq-org-roam-pages-directory)
                   org-roam-directory))
      ".org")))
 
-(defun org-roam-logseq--create-from (files inventory fuzzy-dict)
+(defun logseq-org-roam--create-from (files inventory fuzzy-dict)
   "Author new files for dead links present in FILES.
 INVENTORY and FUZZY-DICT are used for dead links detection with
 file links and fuzzy links respectively.  Any dead links is
 considered a candidate for creation of new files.
 
 Fuzzy links are first transformed to an expended path by calling
-`org-roam-logseq-create-translate' (via `funcall') with the link
+`logseq-org-roam-create-translate' (via `funcall') with the link
 path as an argument.
 
 If file links are expanded against the parent directory of the
 file containing them.
 
 The path is given as the first argument to
-`org-roam-logseq-create-accept' (via `funcall') when it is
+`logseq-org-roam-create-accept' (via `funcall') when it is
 non-nil.  Note that by default, journal entries will not be
-created (see `org-roam-logseq-create-accept'), only pages will.
+created (see `logseq-org-roam-create-accept'), only pages will.
 
 The resulting path must match `org-roam-file-p', it's
 parent directory must exist, and the file must not exist.
@@ -999,47 +999,47 @@ Return the list of new files created."
                     (and
                      (eq 'not-found (gethash (downcase path)
                                              fuzzy-dict 'not-found))
-                     org-roam-logseq-create-translate))
+                     logseq-org-roam-create-translate))
               (let ((new-path
                      (if (eq type 'file)
                          (expand-file-name path
                                            (file-name-directory file))
                        (expand-file-name
-                        (funcall org-roam-logseq-create-translate path)
+                        (funcall logseq-org-roam-create-translate path)
                         (file-name-directory file))))
                     (new-title (if (eq type 'file) descr path)))
                 (unless (or (file-exists-p new-path)
                             (not (org-roam-file-p new-path)))
-                  (org-roam-logseq--with-edit-buffer new-path
-                    (org-id-get-create)
-                    (goto-char (point-max))
-                    (insert (concat "#+title: " new-title "\n"))
-                    (save-buffer))
-                  (princ (concat "- Created " (org-roam-logseq--fl new-path)
+                  (logseq-org-roam--with-edit-buffer new-path
+                                                     (org-id-get-create)
+                                                     (goto-char (point-max))
+                                                     (insert (concat "#+title: " new-title "\n"))
+                                                     (save-buffer))
+                  (princ (concat "- Created " (logseq-org-roam--fl new-path)
                                  " from the " (if (eq type 'file) "file" "fuzzy")
-                                 " link in " (org-roam-logseq--fl new-path) "\n"))
+                                 " link in " (logseq-org-roam--fl new-path) "\n"))
                   (push new-path created-files))))))))
     (unless created-files
       "No files were created\n")
     created-files))
 
-(defun org-roam-logseq--log-start (force create)
+(defun logseq-org-roam--log-start (force create)
   "Log start of execution and state of FORCE and CREATE flags."
   ;; TODO: log other settings
   (princ
    (concat
     (format "* Ran %s\n" (format-time-string "%x at %X"))
     (format "Using Org-roam directory: %s\n" org-roam-directory)
-    (format "Logseq pages directory is: %s\n" org-roam-logseq-pages-directory)
-    (format "Logseq journal directory is: %s\n" org-roam-logseq-journals-directory)
+    (format "Logseq pages directory is: %s\n" logseq-org-roam-pages-directory)
+    (format "Logseq journal directory is: %s\n" logseq-org-roam-journals-directory)
     "With flags:\n"
     (format "- ~force~ was: %s\n" force)
     (format "- ~create~ was: %s\n" create)
     "With settings:\n"
-    (format "- ~org-roam-logseq-link-types~: %S\n" org-roam-logseq-link-types)
+    (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types)
     "\n")))
 
-(defun org-roam-logseq--check-errors (files inventory)
+(defun logseq-org-roam--check-errors (files inventory)
   "Throw when FILES in INVENTORY have errors."
   (dolist (file files)
     (when-let ((plist (gethash file inventory)))
@@ -1048,7 +1048,7 @@ Return the list of new files created."
                 (plist-get plist :update-error))
         (throw 'stop 'error-encountered)))))
 
-(defun org-roam-logseq--log-errors (files inventory)
+(defun logseq-org-roam--log-errors (files inventory)
   "Log parsing issues with FILES in INVENTORY.
 Return non-nil if issues where found."
   (let (error-p modified)
@@ -1061,18 +1061,18 @@ Return non-nil if issues where found."
             (princ "** Verify the syntax in the following files:\n")
             (setq error-p t))
           (princ (concat "- Error " (format "%s" err)
-                         " parsing " (org-roam-logseq--fl file) ", skipped\n")))
+                         " parsing " (logseq-org-roam--fl file) ", skipped\n")))
         (when-let ((err (plist-get plist :update-error)))
           (unless error-p
             (princ "** Verify the syntax in the following files:\n")
             (setq error-p t))
           (princ (concat "- Error " (format "%s" err)
-                         " updating " (org-roam-logseq--fl file)
+                         " updating " (logseq-org-roam--fl file)
                          ", left as-is\n")))))
     (when modified
       (princ "** Save the following files before continuing:\n")
       (dolist (file modified)
-        (princ (concat "- " (org-roam-logseq--fl file)))))
+        (princ (concat "- " (logseq-org-roam--fl file)))))
     (when (or modified error-p)
       (princ (concat "** Stopped with errors:
 Please save any work in progress or fix syntax issues in the
@@ -1080,23 +1080,23 @@ files mentionned above before re-running the function again.
 Errors can impact the accuracy of file creation or link
 conversion.\n\n")))))
 
-(defun org-roam-logseq--sanity-check ()
+(defun logseq-org-roam--sanity-check ()
   "Check that `org-roam' is installed and configured."
   (cond
    ((not (featurep 'org-roam))
-    (display-warning 'org-roam-logseq
+    (display-warning 'logseq-org-roam
                      "`org-roam' is not installed" :error) nil)
    (org-roam-directory
-    (display-warning 'org-roam-logseq
+    (display-warning 'logseq-org-roam
                      "`org-roam-directory' is not set" :error) nil)
    ((not (file-directory-p org-roam-directory))
-    (display-warning 'org-roam-logseq
+    (display-warning 'logseq-org-roam
                      "`org-roam-directory' is not a directory" :error) nil)
    ;; TODO sanity check that pages and journal can be found
    (t))
 
 ;;;###autoload
-  (defun org-roam-logseq (&optional mode)
+  (defun logseq-org-roam (&optional mode)
     "Migrate files edited with Logseq to `org-roam'.
 Parse files returned by `org-roam-list-files' that are not part
 of the `org-roam' index, and if it finds files that were created
@@ -1120,7 +1120,7 @@ a lot of edits with Logseq (or other), and some of the files that
 are in `org-roam' may still contain links to other files that are
 not converted to ID-links yet.
 
-When `org-roam-logseq' encounters a link created with Logseq to a
+When `logseq-org-roam' encounters a link created with Logseq to a
 page that does not exists yet, it can create that page for you,
 leveraging your `org-roam-capture-templates', as you would if you
 were using the normal `org-roam' workflow.  This mode of
@@ -1133,7 +1133,7 @@ by `org-roam-list-files' call this function with (triple)
 \\[universal-argument] \\[universal-argument]
 \\[universal-argument].
 
-When calling `org-roam-logseq' programmatically it accepts the
+When calling `logseq-org-roam' programmatically it accepts the
 following arguments:
 
 nil: parse only files that are not yet indexed (by `org-roam')
@@ -1142,25 +1142,25 @@ nil: parse only files that are not yet indexed (by `org-roam')
 
 \\='(4) or 4 or \\='force: parse all files (even those already
   indexed) and does not create any new files.  Equivalent to
-  \\[universal-argument] \\[org-roam-logseq].
+  \\[universal-argument] \\[logseq-org-roam].
 
 \\='(16) or 16 or \\='create: parse only files that are not yet
   indexed and create new files using your capture templates (when
   it encounters a Logseq link without target).  Equivalent to
   \\[universal-argument] \\[universal-argument]
-  \\[org-roam-logseq].
+  \\[logseq-org-roam].
 
 \\='(64) or 64 or \\='force-create: parse all files and create new
   files using your capture templates.  Equivalent to
   \\[universal-argument] \\[universal-argument]
-  \\[universal-argument] \\[org-roam-logseq].
+  \\[universal-argument] \\[logseq-org-roam].
 
-To find out how `org-roam-logseq' dectect Logseq links, read the
-documentation string of `org-roam-logseq-link-types'.  To find
-out how `org-roam-logseq' uses your own capture templates, read
-the documentation string of `org-roam-logseq-capture'."
+To find out how `logseq-org-roam' dectect Logseq links, read the
+documentation string of `logseq-org-roam-link-types'.  To find
+out how `logseq-org-roam' uses your own capture templates, read
+the documentation string of `logseq-org-roam-capture'."
     (interactive "P")
-    (unless (org-roam-logseq--sanity-check)
+    (unless (logseq-org-roam--sanity-check)
       (let (force_flag create_flag)
         (cond
          ((or (equal mode '(4))
@@ -1176,8 +1176,8 @@ the documentation string of `org-roam-logseq-capture'."
               (eq mode 'force-create))
           (setq force_flag t)
           (setq create_flag t)))
-        (org-roam-logseq--with-log-buffer
-         (org-roam-logseq--log-start force_flag create_flag)
+        (logseq-org-roam--with-log-buffer
+         (logseq-org-roam--log-start force_flag create_flag)
          ;; Main flow
          ;;
          ;; - inventory files fully
@@ -1192,9 +1192,9 @@ the documentation string of `org-roam-logseq-capture'."
          ;; - Creation adds complexity since we must parse the entire
          ;; content for all files to discover dead links first.
          (let* ((files (org-roam-list-files))
-                (link-parts (cond ((eq org-roam-logseq-link-types 'files)
+                (link-parts (cond ((eq logseq-org-roam-link-types 'files)
                                    '(file-links))
-                                  ((eq org-roam-logseq-link-types 'fuzzy)
+                                  ((eq logseq-org-roam-link-types 'fuzzy)
                                    '(fuzzy-links))
                                   (t '(file-links fuzzy-links))))
                 inventory
@@ -1202,43 +1202,43 @@ the documentation string of `org-roam-logseq-capture'."
                 created-files
                 not-created-files
                 fuzzy-dict)
-           (org-roam-logseq--catch-fun 'stop
-               (lambda (_)
-                 (org-roam-logseq--log-errors files inventory)
-                 (display-warning 'org-roam-logseq
-                                  (concat "Stopped with errors, see "
-                                          org-roam-logseq--log-buffer-name
-                                          " buffer")
-                                  :error))
-             (setq inventory
-                   (org-roam-logseq--inventory-all
-                    files force_flag (append '(first-section) link-parts)))
-             (setq modified-files
-                   (org-roam-logseq--update-all-first-sections files inventory))
-             (org-roam-logseq--inventory-update modified-files inventory
-                                                (append '(first-section) link-parts))
-             (when (memq 'fuzzy-links link-parts)
-               (setq fuzzy-dict (org-roam-logseq--calculate-fuzzy-dict files inventory)))
-             ;; Do as much work as possible, but beyond this point, the errors
-             ;; (modified files, parse or update errors) could affect accuracy
-             ;; of the changes
-             (org-roam-logseq--check-errors files inventory)
-             (setq not-created-files files)
-             (when create_flag
-               (setq created-files
-                     (org-roam-logseq--create-from files inventory
-                                                   fuzzy-dict))
-               (org-roam-logseq--inventory-update created-files inventory
-                                                  ;; No links added to new files
-                                                  '(first-section))
-               (org-roam-logseq--check-errors created-files inventory)
-               (setq files (append created-files files)))
-             (when (org-roam-logseq--update-all-links not-created-files
-                                                      inventory fuzzy-dict)
-               (run-hooks 'org-roam-logseq-updated-hook))
-             (org-roam-logseq--check-errors files inventory)
-             ;; TODO: Add summary of results
-             )))))))
+           (logseq-org-roam--catch-fun 'stop
+                                       (lambda (_)
+                                         (logseq-org-roam--log-errors files inventory)
+                                         (display-warning 'logseq-org-roam
+                                                          (concat "Stopped with errors, see "
+                                                                  logseq-org-roam--log-buffer-name
+                                                                  " buffer")
+                                                          :error))
+                                       (setq inventory
+                                             (logseq-org-roam--inventory-all
+                                              files force_flag (append '(first-section) link-parts)))
+                                       (setq modified-files
+                                             (logseq-org-roam--update-all-first-sections files inventory))
+                                       (logseq-org-roam--inventory-update modified-files inventory
+                                                                          (append '(first-section) link-parts))
+                                       (when (memq 'fuzzy-links link-parts)
+                                         (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict files inventory)))
+                                       ;; Do as much work as possible, but beyond this point, the errors
+                                       ;; (modified files, parse or update errors) could affect accuracy
+                                       ;; of the changes
+                                       (logseq-org-roam--check-errors files inventory)
+                                       (setq not-created-files files)
+                                       (when create_flag
+                                         (setq created-files
+                                               (logseq-org-roam--create-from files inventory
+                                                                             fuzzy-dict))
+                                         (logseq-org-roam--inventory-update created-files inventory
+                                                                            ;; No links added to new files
+                                                                            '(first-section))
+                                         (logseq-org-roam--check-errors created-files inventory)
+                                         (setq files (append created-files files)))
+                                       (when (logseq-org-roam--update-all-links not-created-files
+                                                                                inventory fuzzy-dict)
+                                         (run-hooks 'logseq-org-roam-updated-hook))
+                                       (logseq-org-roam--check-errors files inventory)
+                                       ;; TODO: Add summary of results
+                                       )))))))
 
-(provide 'org-roam-logseq)
-;;; org-roam-logseq.el ends here
+(provide 'logseq-org-roam)
+;;; logseq-org-roam.el ends here
