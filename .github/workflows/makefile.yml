@@ -1,0 +1,29 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs_version:
+          - 27.2
+          - 28.1
+          - 28.2
+          - 29.1
+          - snapshot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs_version }}
+      - run: make test
+      - uses: leotaku/elisp-check@master
+        with:
+          check: melpa
+          file: org-roam-logseq.el
