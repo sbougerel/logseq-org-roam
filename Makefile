@@ -5,7 +5,7 @@
 
 RM = rm -f
 EMACS = emacs
-LISP = org-roam-logseq
+LISP = logseq-org-roam
 SRC = $(LISP).el
 TESTS = $(LISP)-test.el
 BYTEC = $(SRC)c
