@@ -3,7 +3,7 @@
 ;; Copyright (C) 2024, Sylvain Bougerel
 
 ;; Author: Sylvain Bougerel
-;; URL: https://github.com/idanov/logseq-org-roam.el/
+;; URL: https://github.com/sbougerel/logseq-org-roam.el/
 ;; Keywords: tools outlines
 ;; Version: 1.0.0
 ;; Package-Requires: ((org-roam "2.2.2") (emacs "27.2") (org "9.3"))
@@ -35,12 +35,9 @@
 ;; modifications have been identified before they are performed to reduce the
 ;; number of passes to the minimum.
 ;;
-;; This package features a single point of entry: `logseq-org-roam-import' which
-;; examines the notes in your org-roam directory and prompts to import into
-;; org-roam all notes that were updated or captured in Logseq.
-;; `logseq-org-roam-import' can run upon visiting a file and it will do a fine
-;; job, however it's best to run it a single time, after the notes from Logseq
-;; are added to org-roam.
+;; This package features a single point of entry: `logseq-org-roam' which
+;; examines Logseq files under your org-roam directory and converts them to
+;; org-roam.
 ;;
 ;; What are the rules for import and the resulting actions?
 ;;
