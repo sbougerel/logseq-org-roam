@@ -613,10 +613,10 @@ A [[test links]] matching headline.
      (should (equal (substring logs 0 (length expected-logs))
                     expected-logs)))))
 
-(ert-deftest logseq-org-roam--update-all-first-sections--many ()
+(ert-deftest logseq-org-roam--update-all--first-sections ()
   (mocker-let ((logseq-org-roam--update-first-section
                 (p)
-                ((:occur 2 :input '((:hash "hash")) :output-generator #'ignore)))
+                ((:occur 2 :input-matcher #'always :output-generator #'ignore)))
                (logseq-org-roam--find-buffer-visiting
                 (f &optional p)
                 ((:occur 2 :input-matcher #'always :output nil)))
@@ -657,7 +657,7 @@ A [[test links]] matching headline.
                      (expected '("h")))
                 (with-temp-buffer
                   (let ((standard-output (current-buffer)))
-                    (setq actual (logseq-org-roam--update-all-first-sections
+                    (setq actual (logseq-org-roam--update-all
                                   '("a" "b" "c" "d" "e" "f" "g" "h")
                                   inventory))
                     (setq logs (buffer-string))))
@@ -667,6 +667,59 @@ A [[test links]] matching headline.
                 (should (equal logs
                                "** First sections of the following files are updated:\n- Updated [[file:h][h]]\n")))))
 
+(ert-deftest logseq-org-roam--update-all--links ()
+  (mocker-let ((logseq-org-roam--update-links
+                (p i d)
+                ((:occur 2 :input-matcher #'always :output-generator #'ignore)))
+               (logseq-org-roam--find-buffer-visiting
+                (f &optional p)
+                ((:occur 2 :input-matcher #'always :output nil)))
+               (logseq-org-roam--secure-hash
+                (algo obj &optional s e b)
+                ((:min-occur 2 :max-occur 2
+                  :input-matcher #'always :output "hash")))
+               (logseq-org-roam--find-file-noselect
+                (f &optional n r w)
+                ((:input '("a" nil nil nil) ; no modifications
+                  :output-generator (lambda (f &optional n r w)
+                                      (get-buffer-create " *foo*" t)))
+                 (:input '("h" nil nil nil) ; with modifications
+                  :output-generator (lambda (f &optional n r w)
+                                      (let ((buf (get-buffer-create " *foo*" t)))
+                                        (with-current-buffer buf
+                                          (set-buffer-modified-p t))
+                                        buf)))))
+               (save-buffer
+                (&optional b)
+                ((:occur 1
+                  :input-matcher #'always :output-generator #'ignore))))
+              (let* (logs
+                     actual
+                     (org-roam-directory default-directory)
+                     (inventory (make-hash-table-from
+                                 '(("a" . (:hash "hash" :links '("foo")))
+                                   ("b" . (:modified-p t))
+                                   ("c" . (:external-p t))
+                                   ("d" . (:cache-p t))
+                                   ("e" . (:parse-error t))
+                                   ("f" . (:update-error t))
+                                   ("g" . (:title "Foo"
+                                           :id "foo"
+                                           :aliases '("foo")
+                                           :roam-aliases '("foo")))
+                                   ("h" . (:hash "hash" :links '("foo"))))))
+                     (expected '("h")))
+                (with-temp-buffer
+                  (let ((standard-output (current-buffer)))
+                    (setq actual (logseq-org-roam--update-all
+                                  '("a" "b" "c" "d" "e" "f" "g" "h")
+                                  inventory t nil))
+                    (setq logs (buffer-string))))
+                (should (equal actual expected))
+                (should (equal (gethash "a" inventory) '(:hash "hash" :links '("foo"))))
+                (should (equal (gethash "h" inventory) '(:hash "hash" :links '("foo"))))
+                (should (equal logs
+                               "** Links of the following files are updated:\n- Updated [[file:h][h]]\n")))))
 
 
 ;; TODO test create translate default

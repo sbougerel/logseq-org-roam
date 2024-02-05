@@ -864,11 +864,19 @@ only with file links, this hashtable is not used."
               (insert (concat "[[id:" id "][" path "]]")))))))
     t))
 
-(defun logseq-org-roam--update-all-first-sections (files inventory)
-  "Update the first sections of all FILES according to INVENTORY.
-After the update is completed, we update inventory with the new information."
+(defun logseq-org-roam--update-all (files inventory &optional link-p fuzzy-dict)
+  "Update all FILES according to INVENTORY.
+By default only the first section is updated, but if LINK-P is
+non-nil, links are updated instead taking into account
+FUZZY-DICT.
+
+First sections and links are never updated in the same pass,
+since to update the links, all first sections must be inventoried
+first."
   (let (updated-files log-p)
-    (princ "** First sections of the following files are updated:\n")
+    (princ (concat "** "
+                   (if link-p "Links" "First sections")
+                   " of the following files are updated:\n"))
     (dolist (file files)
       (when-let ((plist (gethash file inventory)))
         (unless (or (plist-get plist :modified-p)
@@ -876,11 +884,13 @@ After the update is completed, we update inventory with the new information."
                     (plist-get plist :parse-error)
                     (plist-get plist :cache-p)
                     (plist-get plist :update-error)
-                    (and (plist-get plist :title)
-                         (plist-get plist :id)
-                         ;; TODO store diff and union instead?
-                         (not (seq-difference (plist-get plist :aliases)
-                                              (plist-get plist :roam-aliases)))))
+                    (if link-p
+                        (not (plist-get plist :links))
+                      (and (plist-get plist :title)
+                           (plist-get plist :id)
+                           ;; TODO store diff and union instead?
+                           (not (seq-difference (plist-get plist :aliases)
+                                                (plist-get plist :roam-aliases))))))
           (logseq-org-roam--catch-fun
               'fault (lambda (err)
                        (puthash file
@@ -891,7 +901,9 @@ After the update is completed, we update inventory with the new information."
                              (logseq-org-roam--secure-hash
                               'sha256 (current-buffer)))
                 (throw 'fault 'hash-mismatch))
-              (logseq-org-roam--update-first-section plist)
+              (if link-p
+                  (logseq-org-roam--update-links plist inventory fuzzy-dict)
+                (logseq-org-roam--update-first-section plist))
               (when (buffer-modified-p)
                 (save-buffer)  ;; NOTE: runs org-roam hook and formatters
                 (push file updated-files)
@@ -900,44 +912,6 @@ After the update is completed, we update inventory with the new information."
     (unless log-p
       (princ "No updates found\n"))
     updated-files))
-
-;; TODO: make more DRY with `logseq-org-roam--update-all-first-sections'
-(defun logseq-org-roam--update-all-links (files inventory fuzzy-dict)
-  "Update the links in FILES according to INVENTORY.
-Return non-nil if any file was updated.
-
-The argument FUZZY-DICT is a hash-tables needed to map a fuzzy
-link target to a key in inventory (a file path).  When dealing
-only with file links, this hashtable is nil."
-  (let (log-p updates-p)
-    (princ "** Links of the following files are updated:\n")
-    (dolist (file files)
-      (when-let ((plist (gethash file inventory)))
-        (unless (or (plist-get plist :modified-p)
-                    (plist-get plist :external-p)
-                    (plist-get plist :parse-error)
-                    (plist-get plist :cache-p)
-                    (plist-get plist :update-error)
-                    (not (plist-get plist :links))) ;; minimal check
-          (logseq-org-roam--catch-fun
-              'fault (lambda (err)
-                       (puthash file
-                                (plist-put plist :update-error err)
-                                inventory))
-            (logseq-org-roam--with-edit-buffer file
-              (unless (equal (plist-get plist :hash)
-                             (logseq-org-roam--secure-hash
-                              'sha256 (current-buffer)))
-                (throw 'fault 'hash-mismatch))
-              (logseq-org-roam--update-links plist inventory fuzzy-dict)
-              (when (buffer-modified-p)
-                (save-buffer) ;; NOTE: important to run org-roam hook
-                (setq updates-p t)
-                (setq log-p t)
-                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
-    (unless log-p
-      (princ "No links to update\n"))
-    updates-p))
 
 (defun logseq-org-roam-create-translate-default (slug)
   "Transform SLUG into a file path."
@@ -1218,7 +1192,7 @@ the documentation string of `logseq-org-roam-capture'."
                    (logseq-org-roam--inventory-all
                     files force_flag (append '(first-section) link-parts)))
              (setq modified-files
-                   (logseq-org-roam--update-all-first-sections files inventory))
+                   (logseq-org-roam--update-all files inventory))
              (logseq-org-roam--inventory-update modified-files inventory
                                                 (append '(first-section) link-parts))
              (when (memq 'fuzzy-links link-parts)
@@ -1237,8 +1211,8 @@ the documentation string of `logseq-org-roam-capture'."
                                                   '(first-section))
                (logseq-org-roam--check-errors created-files inventory)
                (setq files (append created-files files)))
-             (when (logseq-org-roam--update-all-links not-created-files
-                                                      inventory fuzzy-dict)
+             (when (logseq-org-roam--update-all not-created-files
+                                                inventory 'links fuzzy-dict)
                (run-hooks 'logseq-org-roam-updated-hook))
              (logseq-org-roam--check-errors files inventory)
              ;; TODO: Add summary of results
