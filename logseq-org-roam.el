@@ -303,6 +303,8 @@ in `logseq-org-roam-create-translate-default'."
 (defalias 'logseq-org-roam--expand-file #'expand-file-name)
 (defalias 'logseq-org-roam--find-file-noselect #'find-file-noselect)
 (defalias 'logseq-org-roam--insert-file-contents #'insert-file-contents)
+(defalias 'logseq-org-roam--find-buffer-visiting #'find-buffer-visiting)
+(defalias 'logseq-org-roam--secure-hash #'secure-hash)
 
 (defmacro logseq-org-roam--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
@@ -336,19 +338,21 @@ If the buffer is new, `org-mode' startup is inhibited.  This
 macro does not save the file, but will *always* kill the buffer
 if it was previously created."
   (declare (indent 1) (debug t))
-  `(let* ((existing-buffer (find-buffer-visiting ,file))
-          (buf
-           (or existing-buffer
-               (let ((auto-mode-alist nil)
-                     (find-file-hook nil))
-                 (logseq-org-roam--find-file-noselect ,file)))))
-     (unwind-protect
-         (with-current-buffer buf
-           (unless (derived-mode-p 'org-mode)
-             (delay-mode-hooks
-               (let ((org-inhibit-startup t)) (org-mode))))
-           ,@body)
-       (unless existing-buffer (kill-buffer buf)))))
+  (let ((exist-buf (make-symbol "exist-buf"))
+        (buf (make-symbol "buf")))
+    `(let* ((,exist-buf (logseq-org-roam--find-buffer-visiting ,file))
+            (,buf
+             (or ,exist-buf
+                 (let ((auto-mode-alist nil)
+                       (find-file-hook nil))
+                   (logseq-org-roam--find-file-noselect ,file)))))
+       (unwind-protect
+           (with-current-buffer ,buf
+             (unless (derived-mode-p 'org-mode)
+               (delay-mode-hooks
+                 (let ((org-inhibit-startup t)) (org-mode))))
+             ,@body)
+         (unless ,exist-buf (kill-buffer ,buf))))))
 
 (defmacro logseq-org-roam--with-temp-buffer (file &rest body)
   "Visit FILE into an `org-mode' temp buffer and execute BODY.
@@ -476,7 +480,7 @@ Return the number of files from INVENTORY that are currently
 being modified in a buffer."
   (let ((count 0))
     (dolist (file files)
-      (when-let* ((existing_buf (find-buffer-visiting file))
+      (when-let* ((existing_buf (logseq-org-roam--find-buffer-visiting file))
                   (mod-p (buffer-modified-p existing_buf)))
         (setq count (1+ count))
         (let* ((plist (gethash file inventory))
@@ -662,17 +666,17 @@ that were parsed."
                     (plist-get plist :update-error))
           (setq count (1+ count))
           (logseq-org-roam--catch-fun
-           'fault (lambda (err)
-                    (puthash file
-                             (plist-put plist :parse-error err)
-                             inventory)))
+              'fault (lambda (err)
+                       (puthash file
+                                (plist-put plist :parse-error err)
+                                inventory)))
           (logseq-org-roam--with-temp-buffer file
-                                             (let ((new_plist (plist-put plist :hash
-                                                                         (secure-hash 'sha256
-                                                                                      (current-buffer)))))
-                                               (setq new_plist
-                                                     (logseq-org-roam--parse-buffer new_plist parts))
-                                               (puthash file new_plist inventory))))))
+            (let ((new_plist (plist-put plist :hash
+                                        (logseq-org-roam--secure-hash
+                                         'sha256 (current-buffer)))))
+              (setq new_plist
+                    (logseq-org-roam--parse-buffer new_plist parts))
+              (puthash file new_plist inventory))))))
     count))
 
 (defun logseq-org-roam--inventory-all (files force parts)
@@ -878,24 +882,26 @@ After the update is completed, we update inventory with the new information."
                          (not (seq-difference (plist-get plist :aliases)
                                               (plist-get plist :roam-aliases)))))
           (logseq-org-roam--catch-fun
-           'fault (lambda (err)
-                    (puthash file
-                             (plist-put plist :update-error err)
-                             inventory))
-           (logseq-org-roam--with-edit-buffer file
-                                              (unless (equal (plist-get plist :hash)
-                                                             (secure-hash 'sha256 (current-buffer)))
-                                                (throw 'fault 'hash-mismatch))
-                                              (logseq-org-roam--update-first-section plist)
-                                              (when (buffer-modified-p)
-                                                (save-buffer)  ;; NOTE: runs org-roam hook and formatters
-                                                (push file updated-files)
-                                                (setq log-p t)
-                                                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
+              'fault (lambda (err)
+                       (puthash file
+                                (plist-put plist :update-error err)
+                                inventory))
+            (logseq-org-roam--with-edit-buffer file
+              (unless (equal (plist-get plist :hash)
+                             (logseq-org-roam--secure-hash
+                              'sha256 (current-buffer)))
+                (throw 'fault 'hash-mismatch))
+              (logseq-org-roam--update-first-section plist)
+              (when (buffer-modified-p)
+                (save-buffer)  ;; NOTE: runs org-roam hook and formatters
+                (push file updated-files)
+                (setq log-p t)
+                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
     (unless log-p
       (princ "No updates found\n"))
     updated-files))
 
+;; TODO: make more DRY with `logseq-org-roam--update-all-first-sections'
 (defun logseq-org-roam--update-all-links (files inventory fuzzy-dict)
   "Update the links in FILES according to INVENTORY.
 Return non-nil if any file was updated.
@@ -914,20 +920,21 @@ only with file links, this hashtable is nil."
                     (plist-get plist :update-error)
                     (not (plist-get plist :links))) ;; minimal check
           (logseq-org-roam--catch-fun
-           'fault (lambda (err)
-                    (puthash file
-                             (plist-put plist :update-error err)
-                             inventory))
-           (logseq-org-roam--with-edit-buffer file
-                                              (unless (equal (plist-get plist :hash)
-                                                             (secure-hash 'sha256 (current-buffer)))
-                                                (throw 'fault 'hash-mismatch))
-                                              (logseq-org-roam--update-links plist inventory fuzzy-dict)
-                                              (when (buffer-modified-p)
-                                                (save-buffer) ;; NOTE: important to run org-roam hook
-                                                (setq updates-p t)
-                                                (setq log-p t)
-                                                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
+              'fault (lambda (err)
+                       (puthash file
+                                (plist-put plist :update-error err)
+                                inventory))
+            (logseq-org-roam--with-edit-buffer file
+              (unless (equal (plist-get plist :hash)
+                             (logseq-org-roam--secure-hash
+                              'sha256 (current-buffer)))
+                (throw 'fault 'hash-mismatch))
+              (logseq-org-roam--update-links plist inventory fuzzy-dict)
+              (when (buffer-modified-p)
+                (save-buffer) ;; NOTE: important to run org-roam hook
+                (setq updates-p t)
+                (setq log-p t)
+                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
     (unless log-p
       (princ "No links to update\n"))
     updates-p))
@@ -1008,10 +1015,10 @@ Return the list of new files created."
                 (unless (or (file-exists-p new-path)
                             (not (org-roam-file-p new-path)))
                   (logseq-org-roam--with-edit-buffer new-path
-                                                     (org-id-get-create)
-                                                     (goto-char (point-max))
-                                                     (insert (concat "#+title: " new-title "\n"))
-                                                     (save-buffer))
+                    (org-id-get-create)
+                    (goto-char (point-max))
+                    (insert (concat "#+title: " new-title "\n"))
+                    (save-buffer))
                   (princ (concat "- Created " (logseq-org-roam--fl new-path)
                                  " from the " (if (eq type 'file) "file" "fuzzy")
                                  " link in " (logseq-org-roam--fl new-path) "\n"))
@@ -1200,42 +1207,42 @@ the documentation string of `logseq-org-roam-capture'."
                 not-created-files
                 fuzzy-dict)
            (logseq-org-roam--catch-fun 'stop
-                                       (lambda (_)
-                                         (logseq-org-roam--log-errors files inventory)
-                                         (display-warning 'logseq-org-roam
-                                                          (concat "Stopped with errors, see "
-                                                                  logseq-org-roam--log-buffer-name
-                                                                  " buffer")
-                                                          :error))
-                                       (setq inventory
-                                             (logseq-org-roam--inventory-all
-                                              files force_flag (append '(first-section) link-parts)))
-                                       (setq modified-files
-                                             (logseq-org-roam--update-all-first-sections files inventory))
-                                       (logseq-org-roam--inventory-update modified-files inventory
-                                                                          (append '(first-section) link-parts))
-                                       (when (memq 'fuzzy-links link-parts)
-                                         (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict files inventory)))
-                                       ;; Do as much work as possible, but beyond this point, the errors
-                                       ;; (modified files, parse or update errors) could affect accuracy
-                                       ;; of the changes
-                                       (logseq-org-roam--check-errors files inventory)
-                                       (setq not-created-files files)
-                                       (when create_flag
-                                         (setq created-files
-                                               (logseq-org-roam--create-from files inventory
-                                                                             fuzzy-dict))
-                                         (logseq-org-roam--inventory-update created-files inventory
-                                                                            ;; No links added to new files
-                                                                            '(first-section))
-                                         (logseq-org-roam--check-errors created-files inventory)
-                                         (setq files (append created-files files)))
-                                       (when (logseq-org-roam--update-all-links not-created-files
-                                                                                inventory fuzzy-dict)
-                                         (run-hooks 'logseq-org-roam-updated-hook))
-                                       (logseq-org-roam--check-errors files inventory)
-                                       ;; TODO: Add summary of results
-                                       )))))))
+               (lambda (_)
+                 (logseq-org-roam--log-errors files inventory)
+                 (display-warning 'logseq-org-roam
+                                  (concat "Stopped with errors, see "
+                                          logseq-org-roam--log-buffer-name
+                                          " buffer")
+                                  :error))
+             (setq inventory
+                   (logseq-org-roam--inventory-all
+                    files force_flag (append '(first-section) link-parts)))
+             (setq modified-files
+                   (logseq-org-roam--update-all-first-sections files inventory))
+             (logseq-org-roam--inventory-update modified-files inventory
+                                                (append '(first-section) link-parts))
+             (when (memq 'fuzzy-links link-parts)
+               (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict files inventory)))
+             ;; Do as much work as possible, but beyond this point, the errors
+             ;; (modified files, parse or update errors) could affect accuracy
+             ;; of the changes
+             (logseq-org-roam--check-errors files inventory)
+             (setq not-created-files files)
+             (when create_flag
+               (setq created-files
+                     (logseq-org-roam--create-from files inventory
+                                                   fuzzy-dict))
+               (logseq-org-roam--inventory-update created-files inventory
+                                                  ;; No links added to new files
+                                                  '(first-section))
+               (logseq-org-roam--check-errors created-files inventory)
+               (setq files (append created-files files)))
+             (when (logseq-org-roam--update-all-links not-created-files
+                                                      inventory fuzzy-dict)
+               (run-hooks 'logseq-org-roam-updated-hook))
+             (logseq-org-roam--check-errors files inventory)
+             ;; TODO: Add summary of results
+             )))))))
 
 (provide 'logseq-org-roam)
 ;;; logseq-org-roam.el ends here

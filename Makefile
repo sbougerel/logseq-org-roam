@@ -37,7 +37,7 @@ all: compile
 
 compile: $(BYTEC)
 
-test:
+test: $(BYTEC)
 	$(BATCH) \
 		-L . \
 		-l $(TESTS) \
