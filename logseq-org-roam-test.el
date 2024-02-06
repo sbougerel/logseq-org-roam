@@ -721,9 +721,31 @@ A [[test links]] matching headline.
                 (should (equal logs
                                "** Links of the following files are updated:\n- Updated [[file:h][h]]\n")))))
 
+(ert-deftest logseq-org-roam-create-translate-default--normal ()
+  (mocker-let ((logseq-org-roam--expand-file
+                (f &optional d)
+                ((:input-matcher #'always
+                  :output-generator (lambda (f &optional d) (concat d "/" f))))))
+              (let* ((org-roam-directory "/roam")
+                     (logseq-org-roam-create-replace '(("[\\/]" . "_")))
+                     (logseq-org-roam-journals-directory "journals")
+                     (logseq-org-roam-pages-directory "pages")
+                     (testdata '(("Test" . "/roam/pages/Test.org")
+                                 ("Use spaces" . "/roam/pages/Use spaces.org")
+                                 ("Replace/all/slash" . "/roam/pages/Replace_all_slash.org")
+                                 ("Replace\\all\\backslash" . "/roam/pages/Replace_all_backslash.org")
+                                 ("Tue 6 Feb 2024" . "/roam/journals/2024_02_06.org")
+                                 ("Not date 2024" . "/roam/pages/Not date 2024.org")
+                                 ("Not date July 2024" . "/roam/pages/Not date July 2024.org")
+                                 ("2023-12-01" . "/roam/journals/2023_12_01.org"))))
+                (pcase-dolist (`(,input . ,expected) testdata)
+                  (should (equal
+                           (logseq-org-roam-create-translate-default input)
+                           expected))))))
 
-;; TODO test create translate default
-;; TODO test create from
+(ert-deftest logseq-org-roam--create-from--normal ()
+  )
+
 ;; TODO test log errors
 ;; TODO test logseq-org-roam - mocking all internal functions
 

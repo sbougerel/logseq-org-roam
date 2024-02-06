@@ -182,58 +182,6 @@ even when using fuzzy links in Logseq."
   :options '(fuzzy file both)
   :group 'logseq-org-roam)
 
-(defcustom logseq-org-roam-date-like
-  (rx string-start (or (seq (= 4 (in digit)) (= 2 (in "_-" blank) (= 2 (in digit))))
-                       (seq (= 2 (** 1 2 (in digit)) (in "/._-" blank))
-                            (or (= 4 (in digit)) (= 2 (in digit))))
-                       (seq (** 1 2 (in digit)) (in blank)
-                            (>= 3 (in alpha)) (or (seq (? (in ",")) (in blank)) (in blank))
-                            (or (= 4 (in digit)) (= 2 (in digit))))
-                       (seq (>= 3 (in alpha)) (in blank)
-                            (** 1 2 (in digit)) (or (seq (? (in ",")) (in blank)) (in blank))
-                            (or (= 4 (in digit)) (= 2 (in digit))))
-                       (seq (>= 3 (in alpha)) (or (seq (? (in ",")) (in blank)) (in blank))
-                            (** 1 2 (in digit)) (in blank)
-                            (>= 3 (in alpha)) (or (seq (? (in ",")) (in blank)) (in blank))
-                            (or (= 4 (in digit)) (= 2 (in digit))))
-                       (seq (>= 3 (in alpha)) (or (seq (? (in ",")) (in blank)) (in blank))
-                            (>= 3 (in alpha)) (or (seq (? (in ",")) (in blank)) (in blank))
-                            (** 1 2 (in digit)) (in blank)
-                            (or (= 4 (in digit)) (= 2 (in digit)))))
-      string-end)
-  "This regexp tells apart strings that look like dates.
-It's rather loose by default, but you can set this variable so
-that it matches the setting :journal/page-title-format in Logseq
-if it does not already.
-
-Note that even if the regex above matches,
-`logseq-org-roam-create-translate-default' will still attempt to
-parse it with `parse-time-string' and verify that it is actually
-a real date (e.g. 2023-02-31 won't be accepted as a date)."
-  :type 'string
-  :group 'logseq-org-roam)
-
-;;;###autoload (put 'logseq-org-roam-create-translate-link 'safe-local-variable #'symbolp)
-(defcustom logseq-org-roam-create-translate
-  #'logseq-org-roam-create-translate-default
-  "Function translating a fuzzy link to a file path.
-
-By default, it will attempt to translate a fuzzy link path to a
-file path under the pages directory (see
-`logseq-org-roam-pages-directory').  If the fuzzy link represents
-a date, it will translate the link to a path under the journal
-directory (see `logseq-org-roam-journals-directory').  To tell
-apart dates from other strings, it uses `logseq-org-roam-date-p'.
-
-Special characters in the link path are also replaced, see:
-`logseq-org-roam-create-replace'.
-
-Setting this value to nil disables creation of pages for fuzzy
-links"
-  :type 'symbol
-  :group 'logseq-org-roam)
-
-;; TODO: filter files futher from `org-roam-list-files'
 ;;;###autoload (put 'logseq-org-roam-pages-directory 'safe-local-variable #'string)
 (defcustom logseq-org-roam-pages-directory "pages"
   "Set this variable to mirror Logseq :pages-directory setting."
@@ -246,19 +194,57 @@ links"
   :type 'string
   :group 'logseq-org-roam)
 
-;;;###autoload (put 'logseq-org-roam-create-accept 'safe-local-variable #'symbol)
-(defcustom logseq-org-roam-create-accept #'logseq-org-roam-pages-p
+;;;###autoload (put 'logseq-org-roam-journals-file-name-format 'safe-local-variable #'string)
+(defcustom logseq-org-roam-journals-file-name-format "%Y_%m_%d"
+  "Set this variable to mirror Logseq :journal/file-name-format setting."
+  :type 'string
+  :group 'logseq-org-roam)
+
+;;;###autoload (put 'logseq-org-roam-date-to-time-func 'safe-local-variable #'symbolp)
+(defcustom logseq-org-roam-date-to-time-func
+  #'logseq-org-roam-date-to-time-default
+  "During creation, decodes a journal title into a time.
+When non-nil, this variable is called with `funcall', it is
+expected to return a time, like `date-to-time' or `encode-time'.
+If the time returned in 0, assume that the string is not a date.
+
+It uses `parse-time-string' & `date-to-time' which accepts
+several formats, but you can redefine your own so that it matches
+the setting :journal/page-title-format in Logseq if it does not
+already.
+
+If nil, date parsing is disabled."
+  :type 'string
+  :group 'logseq-org-roam)
+
+;;;###autoload (put 'logseq-org-roam-create-translate-func 'safe-local-variable #'symbolp)
+(defcustom logseq-org-roam-create-translate-func
+  #'logseq-org-roam-create-translate-default
+  "Function translating a fuzzy link to a file path.
+By default, it will attempt to translate a fuzzy link path to a
+file path under the pages directory (see
+`logseq-org-roam-create-translate-default').  This variable
+provide complete control over how fuzzy links are translated to
+file paths.
+
+Setting this value to nil disables creation of pages for fuzzy
+links"
+  :type 'symbol
+  :group 'logseq-org-roam)
+
+;;;###autoload (put 'logseq-org-roam-create-accept-func 'safe-local-variable #'symbol)
+(defcustom logseq-org-roam-create-accept-func #'logseq-org-roam-pages-p
   "Tells aparts paths that should be created from paths that should not.
 When non-nil, it is called as a function with a single argument:
-the path.  It is expected to return a boolean value.  If non-nil,
-the path is accepted and the file is created.
+the path.  When the return value is non-nil, the path is accepted
+and the file is created.
 
-The default value (`logseq-org-roam-creat-pages-only') will not
-create journal entires.  If you want journal entries to be
-created too, you can simply set this to
-`logseq-org-roam-create-logseq'.  Note that if you set it to nil,
-any non-existant Org file under `org-roam-directory' can be
-created."
+The default value (`logseq-org-roam-pages-p') will not create
+journal entires.  If you want journal entries to be created too,
+you can set this to `logseq-org-roam-file-p'.  If you want to
+allow files to be created anywhere, you can set this to `always'.
+
+When set to nil, creation is disabled."
   :type 'symbol
   :group 'logseq-org-roam)
 
@@ -290,7 +276,7 @@ created."
 (defconst logseq-org-roam--log-buffer-name "*Org-roam Logseq*"
   "Name for the log buffer.")
 
-(defcustom logseq-org-roam-create-replace '(("[\\/-.,]" . "_"))
+(defcustom logseq-org-roam-create-replace '(("[\\/]" . "_"))
   "Alist specifying replacements for fuzzy links.
 
 Car and cdr of each cons will be given as arguments to
@@ -380,21 +366,6 @@ previously created."
           file
           (file-relative-name file org-roam-directory)))
 
-(defun logseq-org-roam-date-p (maybe-date)
-  "Return non-nil if MAYBE-DATE is an actual date string.
-
-Used in `logseq-org-roam-create-translate-default'."
-  (if-let ((date-like (string-match-p logseq-org-roam-date-like
-                                      maybe-date))
-           (time (parse-time-string maybe-date))
-           (year (nth 5 time))
-           (month (nth 4 time))
-           (day (nth 3 time))
-           (date-string (format "%d-%02d-%02d" year month day))
-           (real-date (format-time-string "%Y-%m-%d"
-                                          (date-to-time date-string))))
-      (equal date-string real-date)))
-
 (defun logseq-org-roam-pages-p (file)
   "Return non-nil if FILE path is under the Logseq pages directory."
   (file-in-directory-p file
@@ -402,7 +373,7 @@ Used in `logseq-org-roam-create-translate-default'."
                                          org-roam-directory)))
 
 (defun logseq-org-roam-file-p (file)
-  "Return non-nil if FILE path is under the Logseq pages directory."
+  "Return non-nil if FILE path is under the Logseq journal or pages directory."
   (or (file-in-directory-p file
                            (expand-file-name logseq-org-roam-pages-directory
                                              org-roam-directory))
@@ -430,6 +401,14 @@ Used in `logseq-org-roam-create-translate-default'."
   "Return non-nil if ELEMENT has a string value that is not empty."
   (and (org-element-property :value element)
        (not (string-empty-p (org-element-property :value element)))))
+
+(defun logseq-org-roam-date-to-time-default (date)
+  "Turn DATE into time if year, month and day can be parsed."
+  (if-let ((parsed (parse-time-string date))
+           (year (nth 5 parsed))
+           (month (nth 4 parsed))
+           (day (nth 3 parsed)))
+      (date-to-time date)))
 
 (defun logseq-org-roam--inventory-init (files)
   "Initialise inventory with FILES."
@@ -905,6 +884,7 @@ first."
                   (logseq-org-roam--update-links plist inventory fuzzy-dict)
                 (logseq-org-roam--update-first-section plist))
               (when (buffer-modified-p)
+
                 (save-buffer)  ;; NOTE: runs org-roam hook and formatters
                 (push file updated-files)
                 (setq log-p t)
@@ -914,14 +894,32 @@ first."
     updated-files))
 
 (defun logseq-org-roam-create-translate-default (slug)
-  "Transform SLUG into a file path."
-  (let ((normalized slug))
-    (pcase-dolist (`(,regex . ,rep) logseq-org-roam-create-replace)
-      (setq normalized (replace-regexp-in-string regex rep normalized)))
+  "Transform SLUG into an expanded file path.
+If the fuzzy link represents a date, it will translate the link
+to a path under the journal directory (see
+`logseq-org-roam-journals-directory') otherwise translate the
+link to a file path under the pages directory (See
+`logseq-org-roam-pages-directory').
+
+To tell apart dates from other strings, it uses
+`logseq-org-roam-date-to-time-func'.  Special characters in the
+link path are also replaced, see:
+`logseq-org-roam-create-replace'."
+  (let ((time (condition-case ()
+                  (funcall logseq-org-roam-date-to-time-func
+                           slug)
+                (error 0)))
+        (normalized slug))
+    (if (and time (not (time-equal-p 0 time)))
+        (setq normalized
+              (format-time-string logseq-org-roam-journals-file-name-format
+                                  time))
+      (pcase-dolist (`(,regex . ,rep) logseq-org-roam-create-replace)
+        (setq normalized (replace-regexp-in-string regex rep normalized))))
     (concat
      (logseq-org-roam--expand-file
       normalized (logseq-org-roam--expand-file
-                  (if (logseq-org-roam-date-p slug)
+                  (if (and time (not (time-equal-p 0 time)))
                       logseq-org-roam-journals-directory
                     logseq-org-roam-pages-directory)
                   org-roam-directory))
@@ -934,16 +932,15 @@ file links and fuzzy links respectively.  Any dead links is
 considered a candidate for creation of new files.
 
 Fuzzy links are first transformed to an expended path by calling
-`logseq-org-roam-create-translate' (via `funcall') with the link
+`logseq-org-roam-create-translate-func' with the link
 path as an argument.
 
 If file links are expanded against the parent directory of the
 file containing them.
 
 The path is given as the first argument to
-`logseq-org-roam-create-accept' (via `funcall') when it is
-non-nil.  Note that by default, journal entries will not be
-created (see `logseq-org-roam-create-accept'), only pages will.
+`logseq-org-roam-create-accept-func' when it is
+non-nil.
 
 The resulting path must match `org-roam-file-p', it's
 parent directory must exist, and the file must not exist.
@@ -956,6 +953,7 @@ then saved.  There is no support for templates at the moment.
 
 Return the list of new files created."
   ;; TODO: add more logs to explain why links are not created.
+  ;; TODO: refactor - looks messy
   (let (created-files)
     (princ "** The following files are created:\n")
     (dolist (file files)
@@ -971,23 +969,31 @@ Return the list of new files created."
           (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
             (when (if (eq type 'file)
                       (eq 'not-found (gethash
-                                      (expand-file-name path
-                                                        (file-name-directory file))
+                                      (logseq-org-roam--expand-file
+                                       path
+                                       (file-name-directory file))
                                       inventory 'not-found))
-                    (and
-                     (eq 'not-found (gethash (downcase path)
-                                             fuzzy-dict 'not-found))
-                     logseq-org-roam-create-translate))
-              (let ((new-path
-                     (if (eq type 'file)
-                         (expand-file-name path
-                                           (file-name-directory file))
-                       (expand-file-name
-                        (funcall logseq-org-roam-create-translate path)
-                        (file-name-directory file))))
-                    (new-title (if (eq type 'file) descr path)))
-                (unless (or (file-exists-p new-path)
-                            (not (org-roam-file-p new-path)))
+                    (eq 'not-found (gethash (downcase path)
+                                            fuzzy-dict 'not-found)))
+              (let* ((new-path
+                      (if (eq type 'file) path
+                        (condition-case ()
+                            (funcall logseq-org-roam-create-translate-func
+                                     path)
+                          (error nil))))
+                     (expanded (logseq-org-roam--expand-file
+                                new-path
+                                (file-name-directory file)))
+                     (new-title (if (eq type 'file) descr path)))
+                (when (and expanded
+                           (file-exists-p (directory-file-name
+                                           (file-name-directory expanded)))
+                           (not (file-exists-p expanded))
+                           (org-roam-file-p expanded)
+                           (condition-case ()
+                               (funcall logseq-org-roam-create-accept-func
+                                        expanded)
+                             (error nil)))
                   (logseq-org-roam--with-edit-buffer new-path
                     (org-id-get-create)
                     (goto-char (point-max))
@@ -1211,8 +1217,9 @@ the documentation string of `logseq-org-roam-capture'."
                                                   '(first-section))
                (logseq-org-roam--check-errors created-files inventory)
                (setq files (append created-files files)))
-             (when (logseq-org-roam--update-all not-created-files
-                                                inventory 'links fuzzy-dict)
+             (when (and (logseq-org-roam--update-all not-created-files
+                                                     inventory 'links fuzzy-dict)
+                        modified-files)
                (run-hooks 'logseq-org-roam-updated-hook))
              (logseq-org-roam--check-errors files inventory)
              ;; TODO: Add summary of results
