@@ -221,14 +221,13 @@ If nil, date parsing is disabled."
 (defcustom logseq-org-roam-create-translate-func
   #'logseq-org-roam-create-translate-default
   "Function translating a fuzzy link to a file path.
-By default, it will attempt to translate a fuzzy link path to a
-file path under the pages directory (see
-`logseq-org-roam-create-translate-default').  This variable
-provide complete control over how fuzzy links are translated to
-file paths.
+When non-nil, it is called with `funcall' and a single argument,
+the fuzzy link.  It is expected to return an absolute file path.
+This variable provide complete control over how fuzzy links are
+translated to file paths.
 
-Setting this value to nil disables creation of pages for fuzzy
-links"
+Default to `logseq-org-roam-create-translate-default'.  Setting
+this value to nil disables creation of pages for fuzzy links."
   :type 'symbol
   :group 'logseq-org-roam)
 
@@ -925,6 +924,28 @@ link path are also replaced, see:
                   org-roam-directory))
      ".org")))
 
+(defun logseq-org-roam--create-path-fuzzy (fuzzy fuzzy-dict)
+  "Return a path from FUZZY link.
+Uses FUZZY-DICT to ensure this is a brand new entry."
+  (when
+      (eq 'not-found (gethash (downcase fuzzy) fuzzy-dict 'not-found))
+    (let ((translated
+           (condition-case ()
+               (funcall logseq-org-roam-create-translate-func fuzzy)
+             (error nil))))
+      (if (file-name-absolute-p translated) translated))))
+
+(defun logseq-org-roam--create-path-file (path file inventory)
+  "Return a path from the PATH in a FILE link.
+The path needs to be expanded first before being checked against
+INVENTORY, as it is normally relative to the FILE it is located
+in."
+  (let ((expanded
+         (logseq-org-roam--expand-file path
+                                       (file-name-directory file))))
+    (if (eq 'not-found (gethash expanded inventory 'not-found))
+        expanded)))
+
 (defun logseq-org-roam--create-from (files inventory fuzzy-dict)
   "Author new files for dead links present in FILES.
 INVENTORY and FUZZY-DICT are used for dead links detection with
@@ -953,58 +974,48 @@ then saved.  There is no support for templates at the moment.
 
 Return the list of new files created."
   ;; TODO: add more logs to explain why links are not created.
-  ;; TODO: refactor - looks messy
   (let (created-files)
-    (princ "** The following files are created:\n")
+    (princ "** Creating new files:\n")
     (dolist (file files)
       (when-let ((plist (gethash file inventory)))
         (unless
-            (or (not plist)
-                (plist-get plist :modified-p)
+            (or (plist-get plist :modified-p)
                 (plist-get plist :external-p)
                 (plist-get plist :parse-error)
                 (plist-get plist :cache-p)
                 (plist-get plist :update-error)
                 (not (plist-get plist :links)))
           (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
-            (when (if (eq type 'file)
-                      (eq 'not-found (gethash
-                                      (logseq-org-roam--expand-file
-                                       path
-                                       (file-name-directory file))
-                                      inventory 'not-found))
-                    (eq 'not-found (gethash (downcase path)
-                                            fuzzy-dict 'not-found)))
-              (let* ((new-path
-                      (if (eq type 'file) path
-                        (condition-case ()
-                            (funcall logseq-org-roam-create-translate-func
-                                     path)
-                          (error nil))))
-                     (expanded (logseq-org-roam--expand-file
-                                new-path
-                                (file-name-directory file)))
-                     (new-title (if (eq type 'file) descr path)))
-                (when (and expanded
-                           (file-exists-p (directory-file-name
-                                           (file-name-directory expanded)))
-                           (not (file-exists-p expanded))
-                           (org-roam-file-p expanded)
-                           (condition-case ()
-                               (funcall logseq-org-roam-create-accept-func
-                                        expanded)
-                             (error nil)))
-                  (logseq-org-roam--with-edit-buffer new-path
-                    (org-id-get-create)
-                    (goto-char (point-max))
-                    (insert (concat "#+title: " new-title "\n"))
-                    (save-buffer))
-                  (princ (concat "- Created " (logseq-org-roam--fl new-path)
-                                 " from the " (if (eq type 'file) "file" "fuzzy")
-                                 " link in " (logseq-org-roam--fl new-path) "\n"))
-                  (push new-path created-files))))))))
+            (let (new-path new-title)
+              (cond
+               ((eq type 'file)
+                (setq new-path (logseq-org-roam--create-path-file
+                                path file inventory))
+                (setq new-title descr))
+               (t
+                (setq new-path (logseq-org-roam--create-path-fuzzy
+                                path fuzzy-dict))
+                (setq new-title path)))
+              (when (and new-path
+                         (file-exists-p (directory-file-name
+                                         (file-name-directory new-path)))
+                         (not (file-exists-p new-path))
+                         (org-roam-file-p new-path)
+                         (condition-case ()
+                             (funcall logseq-org-roam-create-accept-func
+                                      new-path)
+                           (error nil)))
+                (logseq-org-roam--with-edit-buffer new-path
+                  (org-id-get-create)
+                  (goto-char (point-max))
+                  (insert (concat "#+title: " new-title "\n"))
+                  (save-buffer))
+                (princ (concat "- Created " (logseq-org-roam--fl new-path)
+                               " from the " (if (eq type 'file) "file" "fuzzy")
+                               " link in " (logseq-org-roam--fl new-path) "\n"))
+                (push new-path created-files)))))))
     (unless created-files
-      "No files were created\n")
+      "No new files created\n")
     created-files))
 
 (defun logseq-org-roam--log-start (force create)
@@ -1069,14 +1080,28 @@ conversion.\n\n")))))
   (cond
    ((not (featurep 'org-roam))
     (display-warning 'logseq-org-roam
-                     "`org-roam' is not installed" :error) nil)
+                     "`org-roam' is not installed"
+                     :error) nil)
    (org-roam-directory
     (display-warning 'logseq-org-roam
-                     "`org-roam-directory' is not set" :error) nil)
+                     "`org-roam-directory' is not set"
+                     :error) nil)
    ((not (file-directory-p org-roam-directory))
     (display-warning 'logseq-org-roam
-                     "`org-roam-directory' is not a directory" :error) nil)
-   ;; TODO sanity check that pages and journal can be found
+                     "`org-roam-directory' is not a directory"
+                     :error) nil)
+   ((not (file-exists-p (logseq-org-roam--expand-file
+                         logseq-org-roam-pages-directory
+                         org-roam-directory)))
+    (display-warning 'logseq-org-roam
+                     "Logseq pages directory is not under `org-roam-directory'"
+                     :error) nil)
+   ((not (file-exists-p (logseq-org-roam--expand-file
+                         logseq-org-roam-journals-directory
+                         org-roam-directory)))
+    (display-warning 'logseq-org-roam
+                     "Logseq journals directory is not under `org-roam-directory'"
+                     :error) nil)
    (t))
 
 ;;;###autoload
