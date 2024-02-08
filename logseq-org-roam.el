@@ -240,7 +240,7 @@ and the file is created.
 
 The default value (`logseq-org-roam-pages-p') will not create
 journal entires.  If you want journal entries to be created too,
-you can set this to `logseq-org-roam-file-p'.  If you want to
+you can set this to `logseq-org-roam-logseq-p'.  If you want to
 allow files to be created anywhere, you can set this to `always'.
 
 When set to nil, creation is disabled."
@@ -272,8 +272,9 @@ When set to nil, creation is disabled."
     verse-block)
   "List of org-elements that can be affiliated with a :name attribute.")
 
-(defconst logseq-org-roam--log-buffer-name "*Org-roam Logseq*"
-  "Name for the log buffer.")
+(defconst logseq-org-roam--log-buffer-name "*Logseq Org-roam %s*"
+  "Name for the log buffer.
+'%s' will be replaced by `org-roam-directory' if present")
 
 (defcustom logseq-org-roam-create-replace '(("[\\/]" . "_"))
   "Alist specifying replacements for fuzzy links.
@@ -284,27 +285,32 @@ in `logseq-org-roam-create-translate-default'."
   :type 'alist
   :group 'logseq-org-roam)
 
-;; Aliased file function for mocking as they could interact with the file system
+;; Aliased file function that interact with file system for mocking
 (defalias 'logseq-org-roam--expand-file #'expand-file-name)
 (defalias 'logseq-org-roam--find-file-noselect #'find-file-noselect)
 (defalias 'logseq-org-roam--insert-file-contents #'insert-file-contents)
 (defalias 'logseq-org-roam--find-buffer-visiting #'find-buffer-visiting)
 (defalias 'logseq-org-roam--secure-hash #'secure-hash)
+(defalias 'logseq-org-roam--file-exists-p #'file-exists-p)
 
 (defmacro logseq-org-roam--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
   (declare (debug t))
   `(let* ((standard-output
            (with-current-buffer
-               (get-buffer-create logseq-org-roam--log-buffer-name)
-             (if (= (point-min) (point-max))
-                 (insert "\n\n"))
+               (get-buffer-create
+                ;; One buffer per org-roam-directory
+                (format logseq-org-roam--log-buffer-name
+                        org-roam-directory))
              (kill-all-local-variables) ;; return to fundamental for logging
+             (setq default-directory org-roam-directory)
              (setq buffer-read-only nil)
              (setq buffer-file-name nil)
              (setq buffer-undo-list t) ;; disable undo
              (setq inhibit-read-only t)
              (setq inhibit-modification-hooks t)
+             (if (= (point-min) (point-max))
+                 (insert "\n\n"))
              (current-buffer))))
      (prog1 (progn ,@body)
        (with-current-buffer standard-output
@@ -371,7 +377,7 @@ previously created."
                        (expand-file-name logseq-org-roam-pages-directory
                                          org-roam-directory)))
 
-(defun logseq-org-roam-file-p (file)
+(defun logseq-org-roam-logseq-p (file)
   "Return non-nil if FILE path is under the Logseq journal or pages directory."
   (or (file-in-directory-p file
                            (expand-file-name logseq-org-roam-pages-directory
@@ -444,7 +450,7 @@ cache."
   "Mark FILES in INVENTORY that are not Logseq files."
   (let ((count 0))
     (mapc (lambda (file)
-            (unless (logseq-org-roam-file-p file)
+            (unless (logseq-org-roam-logseq-p file)
               (setq count (1+ count))
               (let* ((plist (gethash file inventory))
                      (new_plist (plist-put plist :external-p t)))
@@ -977,7 +983,10 @@ Return the list of new files created."
   (let (created-files)
     (princ "** Creating new files:\n")
     (dolist (file files)
+      (princ "BOUH1\n")
       (when-let ((plist (gethash file inventory)))
+        (pp plist)
+        (princ "\n")
         (unless
             (or (plist-get plist :modified-p)
                 (plist-get plist :external-p)
@@ -985,6 +994,7 @@ Return the list of new files created."
                 (plist-get plist :cache-p)
                 (plist-get plist :update-error)
                 (not (plist-get plist :links)))
+          (princ "BOUH\n")
           (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
             (let (new-path new-title)
               (cond
@@ -996,10 +1006,14 @@ Return the list of new files created."
                 (setq new-path (logseq-org-roam--create-path-fuzzy
                                 path fuzzy-dict))
                 (setq new-title path)))
+              (princ new-path)
+              (princ new-title)
+              (princ "\n")
               (when (and new-path
-                         (file-exists-p (directory-file-name
-                                         (file-name-directory new-path)))
-                         (not (file-exists-p new-path))
+                         (logseq-org-roam--file-exists-p
+                          (directory-file-name
+                           (file-name-directory new-path)))
+                         (not (logseq-org-roam--file-exists-p new-path))
                          (org-roam-file-p new-path)
                          (condition-case ()
                              (funcall logseq-org-roam-create-accept-func
@@ -1015,7 +1029,7 @@ Return the list of new files created."
                                " link in " (logseq-org-roam--fl new-path) "\n"))
                 (push new-path created-files)))))))
     (unless created-files
-      "No new files created\n")
+      (princ "No new files created\n"))
     created-files))
 
 (defun logseq-org-roam--log-start (force create)
@@ -1090,15 +1104,17 @@ conversion.\n\n")))))
     (display-warning 'logseq-org-roam
                      "`org-roam-directory' is not a directory"
                      :error) nil)
-   ((not (file-exists-p (logseq-org-roam--expand-file
-                         logseq-org-roam-pages-directory
-                         org-roam-directory)))
+   ((not (logseq-org-roam--file-exists-p
+          (logseq-org-roam--expand-file
+           logseq-org-roam-pages-directory
+           org-roam-directory)))
     (display-warning 'logseq-org-roam
                      "Logseq pages directory is not under `org-roam-directory'"
                      :error) nil)
-   ((not (file-exists-p (logseq-org-roam--expand-file
-                         logseq-org-roam-journals-directory
-                         org-roam-directory)))
+   ((not (logseq-org-roam--file-exists-p
+          (logseq-org-roam--expand-file
+           logseq-org-roam-journals-directory
+           org-roam-directory)))
     (display-warning 'logseq-org-roam
                      "Logseq journals directory is not under `org-roam-directory'"
                      :error) nil)
@@ -1225,9 +1241,11 @@ the documentation string of `logseq-org-roam-capture'."
              (setq modified-files
                    (logseq-org-roam--update-all files inventory))
              (logseq-org-roam--inventory-update modified-files inventory
-                                                (append '(first-section) link-parts))
+                                                (append '(first-section)
+                                                        link-parts))
              (when (memq 'fuzzy-links link-parts)
-               (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict files inventory)))
+               (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
+                                 files inventory)))
              ;; Do as much work as possible, but beyond this point, the errors
              ;; (modified files, parse or update errors) could affect accuracy
              ;; of the changes

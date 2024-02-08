@@ -505,7 +505,7 @@ A [[test links]] matching headline.
         inventory
         logs)
     (mocker-let
-     ((logseq-org-roam-file-p
+     ((logseq-org-roam-logseq-p
        (f)
        ((:input '("a") :output t)
         (:input '("b") :output t)
@@ -555,7 +555,7 @@ A [[test links]] matching headline.
 
 (ert-deftest logseq-org-roam--inventory-update--no-change ()
   (mocker-let
-   ((logseq-org-roam-file-p
+   ((logseq-org-roam-logseq-p
      (f)
      ((:input '("a") :output t)
       (:input '("b") :output t)
@@ -747,13 +747,58 @@ A [[test links]] matching headline.
                 expected))))))
 
 (ert-deftest logseq-org-roam--create-from--normal ()
-  (mocker-let
-   (())
-   (let* ((inventory (make-hash-table-from '(())))
-          (fuzzy-dict (make-hash-table-from '(())))
-          (expected '("a"))
-          (actual (logseq-org-roam--create-from '("a") inventory fuzzy-dict)))
-     (should (equal actual expected)))))
+  (let ((org-roam-directory default-directory)
+        (logseq-org-roam-create-accept-func #'always)
+        (logseq-org-roam-journals-directory "journals")
+        (logseq-org-roam-pages-directory "pages"))
+    (mocker-let
+     ((logseq-org-roam--create-path-file
+       (p f i)
+       ((:input-matcher #'always :output-generator #'identity)))
+      (logseq-org-roam--create-path-fuzzy
+       (p f)
+       ((:input-matcher #'always :output-generator #'identity)))
+      (org-roam-file-p
+       (p)
+       ((:input-matcher #'always :output t)))
+      (logseq-org-roam--file-exists-p
+       (f)
+       ((:input-matcher #'always
+         :output-generator
+         (lambda (f)
+           ;; Return nil unless it's pages or journals directory
+           (member
+            (list
+             (expand-file-name
+              logseq-org-roam-journals-directory
+              org-roam-directory)
+             (expand-file-name
+              logseq-org-roam-pages-directory
+              org-roam-directory)))))))
+      (org-id-get-create
+       (&optional f)
+       ((:input-matcher #'always
+         :output-generator
+         (lambda (&optional f)
+           (goto-char (point-min))
+           (insert ":PROPERTIES:\nID: abc\n:END:\n")))))
+      (save-buffer
+       (&optional b)
+       ((:input-matcher #'always :output-generator #'ignore))))
+     (let* ((inventory (make-hash-table-from
+                        '(("a" . (:links
+                                  '((file 1 2 "b" "B" "[[file:b][B]")
+                                    (title 3 4 "C" nil "[[C]]")))))))
+            (fuzzy-dict (make-hash-table-from '()))
+            (expected '("b" "C"))
+            actual
+            log)
+       (with-temp-buffer
+         (let ((standard-output (current-buffer)))
+           (setq actual (logseq-org-roam--create-from '("a") inventory fuzzy-dict))
+           (setq logs (buffer-string))))
+       (princ logs)
+       (should (equal actual expected))))))
 
 ;; TODO test logseq-org-roam - mocking all internal functions
 
