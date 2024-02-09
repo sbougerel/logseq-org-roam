@@ -195,23 +195,41 @@ even when using fuzzy links in Logseq."
   :group 'logseq-org-roam)
 
 ;;;###autoload (put 'logseq-org-roam-journals-file-name-format 'safe-local-variable #'string)
-(defcustom logseq-org-roam-journals-file-name-format "%Y_%m_%d"
-  "Set this variable to mirror Logseq :journal/file-name-format setting."
+(defcustom logseq-org-roam-journals-file-name-format "%Y-%m-%d"
+  "Set this variable to mirror Logseq :journal/file-name-format setting.
+You should pick a format that `logseq-org-roam-maybe-date-func'
+can use.  Otherwise, titles for journal entries will not be
+formated correctly: `logseq-org-roam' first parses the file name
+into a time before feeding it back to `format-time-string' to
+create the title (See: `logseq-org-roam-jounals-title-format')."
   :type 'string
   :group 'logseq-org-roam)
 
-;;;###autoload (put 'logseq-org-roam-date-to-time-func 'safe-local-variable #'symbolp)
-(defcustom logseq-org-roam-date-to-time-func
-  #'logseq-org-roam-date-to-time-default
-  "During creation, decodes a journal title into a time.
-When non-nil, this variable is called with `funcall', it is
-expected to return a time, like `date-to-time' or `encode-time'.
-If the time returned in 0, assume that the string is not a date.
+;;;###autoload (put 'logseq-org-roam-journals-title-format 'safe-local-variable #'string)
+(defcustom logseq-org-roam-journals-title-format "%Y-%m-%d"
+  "Set this variable to mirror Logseq :journal/file-name-format setting.
+This is used to create a title for journal entires and to find
+out which fuzzy links point to journal entries (See
+`logseq-org-roam-maybe-date-func').
 
-It uses `parse-time-string' & `date-to-time' which accepts
-several formats, but you can redefine your own so that it matches
-the setting :journal/page-title-format in Logseq if it does not
-already.
+You can set this to any format that `format-time-string' accepts.
+However, you should only use it to create date strings, and not
+time strings.  Generating hours and seconds in the format will
+make it impossible to find out journal entries from fuzzy links."
+  :type 'string
+  :group 'logseq-org-roam)
+
+;;;###autoload (put 'logseq-org-roam-maybe-date-func 'safe-local-variable #'symbolp)
+(defcustom logseq-org-roam-maybe-date-func
+  #'logseq-org-roam-maybe-date-default
+  "Try parsing a string into a date and return time when successful.
+When non-nil, this variable is called with `funcall'.  It is
+given 2 arguments: the first is a time format for
+`format-time-string', the second is the string to evaluate.  Tt
+is expected to return a time, like `date-to-time' or
+`encode-time'.  If the time returned is 0, it assumes that the
+string is not a date.  See `logseq-org-roam-maybe-date-default'
+for a description of the default behaviour.
 
 If nil, date parsing is disabled."
   :type 'string
@@ -377,14 +395,16 @@ previously created."
                        (expand-file-name logseq-org-roam-pages-directory
                                          org-roam-directory)))
 
+(defun logseq-org-roam-journals-p (file)
+  "Return non-nil if FILE path is under the Logseq journal directory."
+  (file-in-directory-p file
+                       (expand-file-name logseq-org-roam-journals-directory
+                                         org-roam-directory)))
+
 (defun logseq-org-roam-logseq-p (file)
   "Return non-nil if FILE path is under the Logseq journal or pages directory."
-  (or (file-in-directory-p file
-                           (expand-file-name logseq-org-roam-pages-directory
-                                             org-roam-directory))
-      (file-in-directory-p file
-                           (expand-file-name logseq-org-roam-journals-directory
-                                             org-roam-directory))))
+  (or (logseq-org-roam-pages-p file)
+      (logseq-org-roam-journals-p file)))
 
 (defun logseq-org-roam--image-file-p (file)
   "Non-nil if FILE is a supported image type."
@@ -407,13 +427,26 @@ previously created."
   (and (org-element-property :value element)
        (not (string-empty-p (org-element-property :value element)))))
 
-(defun logseq-org-roam-date-to-time-default (date)
-  "Turn DATE into time if year, month and day can be parsed."
-  (if-let ((parsed (parse-time-string date))
-           (year (nth 5 parsed))
-           (month (nth 4 parsed))
-           (day (nth 3 parsed)))
-      (date-to-time date)))
+(defun logseq-org-roam-maybe-date-default (date-format maybe-date)
+  "Turn MAYBE-DATE into time if it matches DATE-FORMAT.
+
+Attempts to parse MAYBE-DATE with `parse-time-string' first and
+convert it back to a string with `format-time-string' using
+DATE-FORMAT.  If both string match, it is taken as a journal
+date, and the corresponding time is returned."
+  ;; TODO: Compile a reverse regex to format-time-string?
+  ;; NOTE: hack because '_' are not ISO date chars
+  (let* ((hacked-date (replace-regexp-in-string "_" "-" maybe-date))
+         (parsed (parse-time-string hacked-date))
+         (year (nth 5 parsed))
+         (month (nth 4 parsed))
+         (day (nth 3 parsed))
+         (time (safe-date-to-time hacked-date)))
+    (if (and year month day
+             (equal (format-time-string date-format time)
+                    maybe-date))
+        time
+      0)))
 
 (defun logseq-org-roam--inventory-init (files)
   "Initialise inventory with FILES."
@@ -590,6 +623,7 @@ ID links."
            ((eq type 'headline)
             (puthash (downcase
                       ;; TODO: remove internal function dependency
+                      ;; This function skips tasks, priority, a statistics cookies
                       (org-link--normalize-string
                        (org-element-property :raw-value element))) t text-targets))
            ((and (eq type 'link)
@@ -610,7 +644,7 @@ ID links."
                        (end (- (org-element-property :end element)
                                (org-element-property :post-blank element)))
                        (raw (buffer-substring-no-properties begin end)))
-                  (push `(title ,begin ,end ,path ,descr, raw) links)))))
+                  (push `(fuzzy ,begin ,end ,path ,descr, raw) links)))))
            ((eq type 'target)
             (puthash (downcase (org-element-property :value element)) t text-targets))))))
     ;; Filter out link that match targets, headlines or named elements
@@ -677,13 +711,11 @@ files already indexed are ever modififed).
 The argument PARTS ensures that the function only parses the
 necessary parts of each files."
   (princ "** Inventory initially:\n")
-  (let* ((start (current-time))
-         (inventory (logseq-org-roam--inventory-init files))
+  (let* ((inventory (logseq-org-roam--inventory-init files))
          count_cached
          count_external
          count_modified
-         count_parsed
-         elapsed)
+         count_parsed)
     (unless force
       (setq count_cached
             (logseq-org-roam--inventory-from-cache inventory)))
@@ -693,7 +725,6 @@ necessary parts of each files."
           (logseq-org-roam--inventory-mark-external files inventory))
     (setq count_parsed
           (logseq-org-roam--parse-files files inventory parts))
-    (setq elapsed (float-time (time-subtract (current-time) start)))
     (princ
      (concat
       (format "%s files found in org-roam directory\n"
@@ -706,24 +737,19 @@ necessary parts of each files."
       (format "%s files are external to Logseq and will not be modified\n"
               count_external)
       (format "%s files have been parsed\n"
-              count_parsed)
-      (format "This took %.3f seconds\n" elapsed)))
+              count_parsed)))
     inventory))
 
 (defun logseq-org-roam--inventory-update (files inventory parts)
   "Update INVENTORY by reparsing FILES."
   (princ "** Inventory update:\n")
-  (let* ((start (current-time))
-         count_parsed
-         elapsed)
+  (let* (count_parsed)
     (setq count_parsed
           (logseq-org-roam--parse-files files inventory parts))
-    (setq elapsed (float-time (time-subtract (current-time) start)))
     (princ
      (concat
       (format "%s updated files have been parsed\n"
-              count_parsed)
-      (format "This took %.3f seconds\n" elapsed)))
+              count_parsed)))
     inventory))
 
 (defun logseq-org-roam--calculate-fuzzy-dict (files inventory)
@@ -761,7 +787,7 @@ were found."
                        (other-file (gethash target conflicts))
                        (other-plist (gethash other-file inventory))
                        (other-title-p (equal target (downcase (plist-get other-plist :title)))))
-                  ;; TODO log empty titles too!!
+                  ;; TODO log empty titles too
                   (unless conflicts-p
                     (princ "** Issues building dictionary of titles and aliases:\n")
                     (setq conflicts-p t))
@@ -778,8 +804,19 @@ were found."
     dict))
 
 (defun logseq-org-roam--buffer-title ()
-  "Return a title based on current buffer's file name."
-  (file-name-base (buffer-file-name)))
+  "Return a title based on current buffer's file name.
+If the file is a journal entry, format the title accroding to
+`logseq-org-roam-journals-title-format'."
+  (let* ((base-name (file-name-base (buffer-file-name))))
+    (if (logseq-org-roam-journals-p (buffer-file-name))
+        (let ((time (condition-case ()
+                        (funcall logseq-org-roam-maybe-date-func
+                                 logseq-org-roam-journals-file-name-format
+                                 base-name)
+                      (error 0))))
+          (if (time-equal-p 0 time) base-name
+            (format-time-string logseq-org-roam-journals-title-format time)))
+      base-name)))
 
 (defun logseq-org-roam--update-first-section (plist)
   "Update current buffer first section based on PLIST.
@@ -898,8 +935,8 @@ first."
       (princ "No updates found\n"))
     updated-files))
 
-(defun logseq-org-roam-create-translate-default (slug)
-  "Transform SLUG into an expanded file path.
+(defun logseq-org-roam-create-translate-default (fuzzy)
+  "Transform FUZZY into an expanded file path.
 If the fuzzy link represents a date, it will translate the link
 to a path under the journal directory (see
 `logseq-org-roam-journals-directory') otherwise translate the
@@ -907,14 +944,15 @@ link to a file path under the pages directory (See
 `logseq-org-roam-pages-directory').
 
 To tell apart dates from other strings, it uses
-`logseq-org-roam-date-to-time-func'.  Special characters in the
+`logseq-org-roam-maybe-date-func'.  Special characters in the
 link path are also replaced, see:
 `logseq-org-roam-create-replace'."
   (let ((time (condition-case ()
-                  (funcall logseq-org-roam-date-to-time-func
-                           slug)
+                  (funcall logseq-org-roam-maybe-date-func
+                           logseq-org-roam-journals-title-format
+                           fuzzy)
                 (error 0)))
-        (normalized slug))
+        (normalized fuzzy))
     (if (and time (not (time-equal-p 0 time)))
         (setq normalized
               (format-time-string logseq-org-roam-journals-file-name-format
@@ -983,10 +1021,7 @@ Return the list of new files created."
   (let (created-files)
     (princ "** Creating new files:\n")
     (dolist (file files)
-      (princ "BOUH1\n")
       (when-let ((plist (gethash file inventory)))
-        (pp plist)
-        (princ "\n")
         (unless
             (or (plist-get plist :modified-p)
                 (plist-get plist :external-p)
@@ -994,7 +1029,6 @@ Return the list of new files created."
                 (plist-get plist :cache-p)
                 (plist-get plist :update-error)
                 (not (plist-get plist :links)))
-          (princ "BOUH\n")
           (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
             (let (new-path new-title)
               (cond
@@ -1006,9 +1040,6 @@ Return the list of new files created."
                 (setq new-path (logseq-org-roam--create-path-fuzzy
                                 path fuzzy-dict))
                 (setq new-title path)))
-              (princ new-path)
-              (princ new-title)
-              (princ "\n")
               (when (and new-path
                          (logseq-org-roam--file-exists-p
                           (directory-file-name
@@ -1026,7 +1057,7 @@ Return the list of new files created."
                   (save-buffer))
                 (princ (concat "- Created " (logseq-org-roam--fl new-path)
                                " from the " (if (eq type 'file) "file" "fuzzy")
-                               " link in " (logseq-org-roam--fl new-path) "\n"))
+                               " link in " (logseq-org-roam--fl file) "\n"))
                 (push new-path created-files)))))))
     (unless created-files
       (princ "No new files created\n"))
@@ -1186,7 +1217,10 @@ out how `logseq-org-roam' uses your own capture templates, read
 the documentation string of `logseq-org-roam-capture'."
     (interactive "P")
     (unless (logseq-org-roam--sanity-check)
-      (let (force_flag create_flag)
+      (let ((start (current-time))
+            elapsed
+            force_flag
+            create_flag)
         (cond
          ((or (equal mode '(4))
               (eq mode 4)
@@ -1214,6 +1248,7 @@ the documentation string of `logseq-org-roam-capture'."
          ;;
          ;; - On save, hooks may reformat the buffer in unexpected ways, thus
          ;; it's safer to reparse every time the files are modified.
+         ;;
          ;; - Creation adds complexity since we must parse the entire
          ;; content for all files to discover dead links first.
          (let* ((files (org-roam-list-files))
@@ -1266,7 +1301,8 @@ the documentation string of `logseq-org-roam-capture'."
                (run-hooks 'logseq-org-roam-updated-hook))
              (logseq-org-roam--check-errors files inventory)
              ;; TODO: Add summary of results
-             )))))))
+             (setq elapsed (float-time (time-subtract (current-time) start)))
+             (princ (format "Completed in %.3f seconds\n\n" elapsed)))))))))
 
 (provide 'logseq-org-roam)
 ;;; logseq-org-roam.el ends here

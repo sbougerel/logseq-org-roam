@@ -223,7 +223,7 @@ A [[test links]] matching headline.
                        :title-point 68
                        :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
                        :title "Test note"
-                       :links ((title 288 298 "Logseq" nil "[[Logseq]]")
+                       :links ((fuzzy 288 298 "Logseq" nil "[[Logseq]]")
                                (file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")))))
        (should (equal actual expected))))))
 
@@ -732,15 +732,17 @@ A [[test links]] matching headline.
    (let* ((org-roam-directory "/roam")
           (logseq-org-roam-create-replace '(("[\\/]" . "_")))
           (logseq-org-roam-journals-directory "journals")
+          (logseq-org-roam-journals-title-format "%Y_%m_%d") ;; non-ISO date
+          (logseq-org-roam-journals-file-name-format "%Y_%m_%d")
           (logseq-org-roam-pages-directory "pages")
           (testdata '(("Test" . "/roam/pages/Test.org")
                       ("Use spaces" . "/roam/pages/Use spaces.org")
                       ("Replace/all/slash" . "/roam/pages/Replace_all_slash.org")
                       ("Replace\\all\\backslash" . "/roam/pages/Replace_all_backslash.org")
-                      ("Tue 6 Feb 2024" . "/roam/journals/2024_02_06.org")
                       ("Not date 2024" . "/roam/pages/Not date 2024.org")
                       ("Not date July 2024" . "/roam/pages/Not date July 2024.org")
-                      ("2023-12-01" . "/roam/journals/2023_12_01.org"))))
+                      ("2023-12-01" . "/roam/pages/2023-12-01.org")
+                      ("2023_12_01" . "/roam/journals/2023_12_01.org"))))
      (pcase-dolist (`(,input . ,expected) testdata)
        (should (equal
                 (logseq-org-roam-create-translate-default input)
@@ -754,51 +756,61 @@ A [[test links]] matching headline.
     (mocker-let
      ((logseq-org-roam--create-path-file
        (p f i)
-       ((:input-matcher #'always :output-generator #'identity)))
+       ((:input-matcher #'always
+         :output-generator (lambda (p f i) (if (equal p "b") p)))))
       (logseq-org-roam--create-path-fuzzy
        (p f)
+       ((:input-matcher #'always
+         :output-generator (lambda (p f) (if (equal p "C") p)))))
+      (file-name-directory
+       (f)
+       ((:input-matcher #'always :output "dir")))
+      (directory-file-name
+       (f)
        ((:input-matcher #'always :output-generator #'identity)))
-      (org-roam-file-p
-       (p)
-       ((:input-matcher #'always :output t)))
       (logseq-org-roam--file-exists-p
        (f)
        ((:input-matcher #'always
          :output-generator
          (lambda (f)
-           ;; Return nil unless it's pages or journals directory
-           (member
-            (list
-             (expand-file-name
-              logseq-org-roam-journals-directory
-              org-roam-directory)
-             (expand-file-name
-              logseq-org-roam-pages-directory
-              org-roam-directory)))))))
+           (member f '("dir"))))))
+      (org-roam-file-p
+       (p)
+       ((:input-matcher #'always :output t)))
+      (logseq-org-roam--fl
+       (f)
+       ((:input-matcher #'always
+         :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
+      (logseq-org-roam--find-file-noselect
+       (f &optional n r w)
+       ((:input-matcher #'always
+         :output-generator (lambda (f &optional n r w)
+                             (get-buffer-create f t)))))
       (org-id-get-create
        (&optional f)
        ((:input-matcher #'always
-         :output-generator
-         (lambda (&optional f)
-           (goto-char (point-min))
-           (insert ":PROPERTIES:\nID: abc\n:END:\n")))))
+         :output-generator #'ignore)))
       (save-buffer
        (&optional b)
        ((:input-matcher #'always :output-generator #'ignore))))
      (let* ((inventory (make-hash-table-from
                         '(("a" . (:links
-                                  '((file 1 2 "b" "B" "[[file:b][B]")
-                                    (title 3 4 "C" nil "[[C]]")))))))
-            (fuzzy-dict (make-hash-table-from '()))
-            (expected '("b" "C"))
+                                  ((file 1 2 "a" "A" "[[file:a][A]")
+                                   (file 1 2 "b" "B" "[[file:b][B]")
+                                   (fuzzy 1 2 "C" "c" "[[C][c]]")
+                                   (fuzzy 1 2 "D" "d" "[[D][d]]")))))))
+            (fuzzy-dict (make-hash-table-from '(("D" . "a"))))
+            (expected '("C" "b"))
             actual
             log)
        (with-temp-buffer
          (let ((standard-output (current-buffer)))
-           (setq actual (logseq-org-roam--create-from '("a") inventory fuzzy-dict))
+           (setq actual (logseq-org-roam--create-from
+                         '("a") inventory fuzzy-dict))
            (setq logs (buffer-string))))
-       (princ logs)
-       (should (equal actual expected))))))
+       (should (equal actual expected))
+       (should (equal logs
+                      "** Creating new files:\n- Created [[file:b][b]] from the file link in [[file:a][a]]\n- Created [[file:C][C]] from the fuzzy link in [[file:a][a]]\n"))))))
 
 ;; TODO test logseq-org-roam - mocking all internal functions
 
