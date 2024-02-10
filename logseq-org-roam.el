@@ -329,6 +329,7 @@ in `logseq-org-roam-create-translate-default'."
              (setq inhibit-modification-hooks t)
              (if (= (point-min) (point-max))
                  (insert "\n\n"))
+             (goto-char (point-max))
              (current-buffer))))
      (prog1 (progn ,@body)
        (with-current-buffer standard-output
@@ -360,6 +361,7 @@ if it was previously created."
              (unless (derived-mode-p 'org-mode)
                (delay-mode-hooks
                  (let ((org-inhibit-startup t)) (org-mode))))
+             ;; BUG: save-buffer hooks are not running
              ,@body)
          (unless ,exist-buf (kill-buffer ,buf))))))
 
@@ -748,7 +750,7 @@ necessary parts of each files."
           (logseq-org-roam--parse-files files inventory parts))
     (princ
      (concat
-      (format "%s updated files have been parsed\n"
+      (format "%s files have been parsed\n"
               count_parsed)))
     inventory))
 
@@ -858,8 +860,8 @@ updating the buffer.
 The argument FUZZY-DICT is a hash-table needed to map a fuzzy
 link target to a key in inventory (a file path).  When dealing
 only with file links, this hashtable is not used."
-  ;; Even hash has a small chance of collision
   (catch 'fault
+    ;; Even hash has a small chance of collision
     (pcase-dolist (`(_ ,beg ,end _ _ ,raw) links)
       (unless (equal (buffer-substring-no-properties beg end) raw)
         (throw 'fault 'mismatch-link)))
@@ -923,7 +925,8 @@ first."
                               'sha256 (current-buffer)))
                 (throw 'fault 'hash-mismatch))
               (if link-p
-                  (logseq-org-roam--update-links plist inventory fuzzy-dict)
+                  (logseq-org-roam--update-links (plist-get plist :links)
+                                                 inventory fuzzy-dict)
                 (logseq-org-roam--update-first-section plist))
               (when (buffer-modified-p)
 
@@ -1051,6 +1054,7 @@ Return the list of new files created."
                                       new-path)
                            (error nil)))
                 (logseq-org-roam--with-edit-buffer new-path
+                  ;; TODO: Use capture templates instead
                   (org-id-get-create)
                   (goto-char (point-max))
                   (insert (concat "#+title: " new-title "\n"))
@@ -1068,7 +1072,7 @@ Return the list of new files created."
   ;; TODO: log other settings
   (princ
    (concat
-    (format "* Ran %s\n" (format-time-string "%x at %X"))
+    (format "\n* Ran %s\n" (format-time-string "%x at %X"))
     (format "Using Org-roam directory: %s\n" org-roam-directory)
     (format "Logseq pages directory is: %s\n" logseq-org-roam-pages-directory)
     (format "Logseq journal directory is: %s\n" logseq-org-roam-journals-directory)
@@ -1076,8 +1080,7 @@ Return the list of new files created."
     (format "- ~force~ was: %s\n" force)
     (format "- ~create~ was: %s\n" create)
     "With settings:\n"
-    (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types)
-    "\n")))
+    (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types))))
 
 (defun logseq-org-roam--check-errors (files inventory)
   "Throw when FILES in INVENTORY have errors."
@@ -1127,7 +1130,7 @@ conversion.\n\n")))))
     (display-warning 'logseq-org-roam
                      "`org-roam' is not installed"
                      :error) nil)
-   (org-roam-directory
+   ((not org-roam-directory)
     (display-warning 'logseq-org-roam
                      "`org-roam-directory' is not set"
                      :error) nil)
@@ -1140,20 +1143,20 @@ conversion.\n\n")))))
            logseq-org-roam-pages-directory
            org-roam-directory)))
     (display-warning 'logseq-org-roam
-                     "Logseq pages directory is not under `org-roam-directory'"
+                     "Logseq pages must be found directly under `org-roam-directory'"
                      :error) nil)
    ((not (logseq-org-roam--file-exists-p
           (logseq-org-roam--expand-file
            logseq-org-roam-journals-directory
            org-roam-directory)))
     (display-warning 'logseq-org-roam
-                     "Logseq journals directory is not under `org-roam-directory'"
+                     "Logseq journals must be found directly under `org-roam-directory'"
                      :error) nil)
-   (t))
+   (t)))
 
 ;;;###autoload
-  (defun logseq-org-roam (&optional mode)
-    "Migrate files edited with Logseq to `org-roam'.
+(defun logseq-org-roam (&optional mode)
+  "Migrate files edited with Logseq to `org-roam'.
 Parse files returned by `org-roam-list-files' that are not part
 of the `org-roam' index, and if it finds files that were created
 by Logseq, it updates these files to set ID, title, aliases, or
@@ -1215,94 +1218,94 @@ To find out how `logseq-org-roam' dectect Logseq links, read the
 documentation string of `logseq-org-roam-link-types'.  To find
 out how `logseq-org-roam' uses your own capture templates, read
 the documentation string of `logseq-org-roam-capture'."
-    (interactive "P")
-    (unless (logseq-org-roam--sanity-check)
-      (let ((start (current-time))
-            elapsed
-            force_flag
-            create_flag)
-        (cond
-         ((or (equal mode '(4))
-              (eq mode 4)
-              (eq mode 'force))
-          (setq force_flag t))
-         ((or (equal mode '(16))
-              (eq mode 16)
-              (eq mode 'create))
-          (setq create_flag t))
-         ((or (equal mode '(64))
-              (eq mode 64)
-              (eq mode 'force-create))
-          (setq force_flag t)
-          (setq create_flag t)))
-        (logseq-org-roam--with-log-buffer
-         (logseq-org-roam--log-start force_flag create_flag)
-         ;; Main flow
-         ;;
-         ;; - inventory files fully
-         ;; - update first-sections and re-parse where needed
-         ;; - (optionally) author new files where needed and re-parse
-         ;; - update links
-         ;;
-         ;; 2 factors make the implementation rather complex:
-         ;;
-         ;; - On save, hooks may reformat the buffer in unexpected ways, thus
-         ;; it's safer to reparse every time the files are modified.
-         ;;
-         ;; - Creation adds complexity since we must parse the entire
-         ;; content for all files to discover dead links first.
-         (let* ((files (org-roam-list-files))
-                (link-parts (cond ((eq logseq-org-roam-link-types 'files)
-                                   '(file-links))
-                                  ((eq logseq-org-roam-link-types 'fuzzy)
-                                   '(fuzzy-links))
-                                  (t '(file-links fuzzy-links))))
-                inventory
-                modified-files
-                created-files
-                not-created-files
-                fuzzy-dict)
-           (logseq-org-roam--catch-fun 'stop
-               (lambda (_)
-                 (logseq-org-roam--log-errors files inventory)
-                 (display-warning 'logseq-org-roam
-                                  (concat "Stopped with errors, see "
-                                          logseq-org-roam--log-buffer-name
-                                          " buffer")
-                                  :error))
-             (setq inventory
-                   (logseq-org-roam--inventory-all
-                    files force_flag (append '(first-section) link-parts)))
-             (setq modified-files
-                   (logseq-org-roam--update-all files inventory))
-             (logseq-org-roam--inventory-update modified-files inventory
-                                                (append '(first-section)
-                                                        link-parts))
-             (when (memq 'fuzzy-links link-parts)
-               (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
-                                 files inventory)))
-             ;; Do as much work as possible, but beyond this point, the errors
-             ;; (modified files, parse or update errors) could affect accuracy
-             ;; of the changes
-             (logseq-org-roam--check-errors files inventory)
-             (setq not-created-files files)
-             (when create_flag
-               (setq created-files
-                     (logseq-org-roam--create-from files inventory
-                                                   fuzzy-dict))
-               (logseq-org-roam--inventory-update created-files inventory
-                                                  ;; No links added to new files
-                                                  '(first-section))
-               (logseq-org-roam--check-errors created-files inventory)
-               (setq files (append created-files files)))
-             (when (and (logseq-org-roam--update-all not-created-files
-                                                     inventory 'links fuzzy-dict)
-                        modified-files)
-               (run-hooks 'logseq-org-roam-updated-hook))
-             (logseq-org-roam--check-errors files inventory)
-             ;; TODO: Add summary of results
-             (setq elapsed (float-time (time-subtract (current-time) start)))
-             (princ (format "Completed in %.3f seconds\n\n" elapsed)))))))))
+  (interactive "P")
+  (when (logseq-org-roam--sanity-check)
+    (let ((start (current-time))
+          elapsed
+          force_flag
+          create_flag)
+      (cond
+       ((or (equal mode '(4))
+            (eq mode 4)
+            (eq mode 'force))
+        (setq force_flag t))
+       ((or (equal mode '(16))
+            (eq mode 16)
+            (eq mode 'create))
+        (setq create_flag t))
+       ((or (equal mode '(64))
+            (eq mode 64)
+            (eq mode 'force-create))
+        (setq force_flag t)
+        (setq create_flag t)))
+      (logseq-org-roam--with-log-buffer
+       (logseq-org-roam--log-start force_flag create_flag)
+       ;; Main flow
+       ;;
+       ;; - inventory files fully
+       ;; - update first-sections and re-parse where needed
+       ;; - (optionally) author new files where needed and re-parse
+       ;; - update links
+       ;;
+       ;; 2 factors make the implementation rather complex:
+       ;;
+       ;; - On save, hooks may reformat the buffer in unexpected ways, thus
+       ;; it's safer to reparse every time the files are modified.
+       ;;
+       ;; - Creation adds complexity since we must parse the entire
+       ;; content for all files to discover dead links first.
+       (let* ((files (org-roam-list-files))
+              (link-parts (cond ((eq logseq-org-roam-link-types 'files)
+                                 '(file-links))
+                                ((eq logseq-org-roam-link-types 'fuzzy)
+                                 '(fuzzy-links))
+                                (t '(file-links fuzzy-links))))
+              inventory
+              modified-files
+              created-files
+              not-created-files
+              fuzzy-dict)
+         (logseq-org-roam--catch-fun 'stop
+             (lambda (_)
+               (logseq-org-roam--log-errors files inventory)
+               (display-warning 'logseq-org-roam
+                                (concat "Stopped with errors, see "
+                                        logseq-org-roam--log-buffer-name
+                                        " buffer")
+                                :error))
+           (setq inventory
+                 (logseq-org-roam--inventory-all
+                  files force_flag (append '(first-section) link-parts)))
+           (setq modified-files
+                 (logseq-org-roam--update-all files inventory))
+           (logseq-org-roam--inventory-update modified-files inventory
+                                              (append '(first-section)
+                                                      link-parts))
+           (when (memq 'fuzzy-links link-parts)
+             (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
+                               files inventory)))
+           ;; Do as much work as possible, but beyond this point, the errors
+           ;; (modified files, parse or update errors) could affect accuracy
+           ;; of the changes
+           (logseq-org-roam--check-errors files inventory)
+           (setq not-created-files files)
+           (when create_flag
+             (setq created-files
+                   (logseq-org-roam--create-from files inventory
+                                                 fuzzy-dict))
+             (logseq-org-roam--inventory-update created-files inventory
+                                                ;; No links added to new files
+                                                '(first-section))
+             (logseq-org-roam--check-errors created-files inventory)
+             (setq files (append created-files files)))
+           (when (and (logseq-org-roam--update-all not-created-files
+                                                   inventory 'links fuzzy-dict)
+                      modified-files)
+             (run-hooks 'logseq-org-roam-updated-hook))
+           (logseq-org-roam--check-errors files inventory)
+           ;; TODO: Add summary of results
+           (setq elapsed (float-time (time-subtract (current-time) start)))
+           (princ (format "Completed in %.3f seconds\n\n" elapsed))))))))
 
 (provide 'logseq-org-roam)
 ;;; logseq-org-roam.el ends here

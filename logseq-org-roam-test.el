@@ -581,7 +581,7 @@ A [[test links]] matching headline.
 * Logseq page with title
 *"))))))
    (let ((org-roam-directory default-directory)
-         (expected-logs "** Inventory update:\n3 updated files have been parsed")
+         (expected-logs "** Inventory update:\n3 files have been parsed")
          inventory
          logs)
      (with-temp-buffer
