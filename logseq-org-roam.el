@@ -696,11 +696,11 @@ that were parsed."
                 (puthash file new_plist inventory)))))))
     count))
 
-(defun logseq-org-roam--inventory-all (files force parts)
+(defun logseq-org-roam--inventory-all (files inventory force parts)
   "Build inventory of `org-roam' metadata for FILES.
-Returns a hashtable mapping absolute paths to a plist describing
-relevant metadata to convert Logseq files to `org-roam'.  The
-absolute paths point to existing and new `org-roam'
+Update INVENTORY (hashtable) with a plist describing relevant
+metadata to convert Logseq files to `org-roam'.  The
+keys (absolute paths) point to both existing and new `org-roam'
 files (presumably created with Logseq).
 
 The argument FORCE ensure that all files are parsed, instead of
@@ -711,8 +711,7 @@ The argument PARTS ensures that the function only parses the
 necessary parts of each files."
   ;; TODO: refactor to return the list of left-over files
   (princ "** Initial inventory:\n")
-  (let* ((inventory (logseq-org-roam--inventory-init files))
-         count_cached
+  (let* (count_cached
          count_external
          count_modified
          count_parsed)
@@ -737,8 +736,7 @@ necessary parts of each files."
       (format "%s files are external to Logseq and will not be modified\n"
               count_external)
       (format "%s files have been parsed\n"
-              count_parsed)))
-    inventory))
+              count_parsed)))))
 
 (defun logseq-org-roam--inventory-update (files inventory parts)
   "Update INVENTORY by reparsing FILES."
@@ -1255,10 +1253,10 @@ the documentation string of `logseq-org-roam-capture'."
                                                 org-roam-directory)
                                         " buffer")
                                 :error))
-           (setq inventory
-                 ;; TODO calculate files that can be updated (all - cache - external)
-                 (logseq-org-roam--inventory-all
-                  files force_flag (append '(first-section) link-parts)))
+           (setq inventory (logseq-org-roam--inventory-init files))
+           ;; TODO calculate files that can be updated (all - cache - external)
+           (logseq-org-roam--inventory-all
+            files inventory force_flag (append '(first-section) link-parts))
            (setq modified-files
                  (logseq-org-roam--update-all files inventory))
            (when modified-files
