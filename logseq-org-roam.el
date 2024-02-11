@@ -680,20 +680,21 @@ that were parsed."
                     (plist-get plist :cache-p)
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
-          (setq count (1+ count))
           (logseq-org-roam--catch-fun
               'fault (lambda (err)
+                       (princ (concat "- Error parsing " (logseq-org-roam--fl file) "\n"))
                        (puthash file
                                 (plist-put plist :parse-error err)
                                 inventory))
             (logseq-org-roam--with-temp-buffer file
-              (princ (concat "- Parsing " (logseq-org-roam--fl file) "\n"))
               (let ((new_plist (plist-put plist :hash
                                           (logseq-org-roam--secure-hash
                                            'sha256 (current-buffer)))))
                 (setq new_plist
                       (logseq-org-roam--parse-buffer new_plist parts))
-                (puthash file new_plist inventory)))))))
+                (puthash file new_plist inventory)
+                (princ (concat "- Parsed " (logseq-org-roam--fl file) "\n"))
+                (setq count (1+ count))))))))
     count))
 
 (defun logseq-org-roam--inventory-all (files inventory force parts)
@@ -708,7 +709,9 @@ relying on information from the `org-roam' cache (in which case,
 files already indexed are ever modififed).
 
 The argument PARTS ensures that the function only parses the
-necessary parts of each files."
+necessary parts of each files.
+
+Returns the number of files parsed without error."
   ;; TODO: refactor to return the list of left-over files
   (princ "** Initial inventory:\n")
   (let* (count_cached
@@ -735,8 +738,9 @@ necessary parts of each files."
               count_modified)
       (format "%s files are external to Logseq and will not be modified\n"
               count_external)
-      (format "%s files have been parsed\n"
-              count_parsed)))))
+      (format "%s files have been parsed without errors\n"
+              count_parsed)))
+    count_parsed))
 
 (defun logseq-org-roam--inventory-update (files inventory parts)
   "Update INVENTORY by reparsing FILES."
@@ -746,9 +750,8 @@ necessary parts of each files."
           (logseq-org-roam--parse-files files inventory parts))
     (princ
      (concat
-      (format "%s files have been parsed\n"
-              count_parsed)))
-    inventory))
+      (format "%s files have been parsed without errors\n"
+              count_parsed)))))
 
 (defun logseq-org-roam--calculate-fuzzy-dict (files inventory)
   "Map titles and aliases of FILES to keys in INVENTORY.
@@ -1255,36 +1258,41 @@ the documentation string of `logseq-org-roam-capture'."
                                 :error))
            (setq inventory (logseq-org-roam--inventory-init files))
            ;; TODO calculate files that can be updated (all - cache - external)
-           (logseq-org-roam--inventory-all
-            files inventory force_flag (append '(first-section) link-parts))
-           (setq modified-files
-                 (logseq-org-roam--update-all files inventory))
-           (when modified-files
-             (logseq-org-roam--inventory-update modified-files inventory
-                                                (append '(first-section)
-                                                        link-parts)))
-           (when (memq 'fuzzy-links link-parts)
-             (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
-                               files inventory)))
-           ;; Do as much work as possible, but beyond this point, the errors
-           ;; (modified files, parse or update errors) could affect accuracy
-           ;; of the changes
-           (logseq-org-roam--check-errors files inventory)
-           (setq not-created-files files)
-           (when create_flag
-             (setq created-files
-                   ;; BUG: file links seems to not be created
-                   (logseq-org-roam--create-from files inventory
-                                                 fuzzy-dict))
-             (logseq-org-roam--inventory-update created-files inventory
-                                                ;; No links added to new files
-                                                '(first-section))
-             (logseq-org-roam--check-errors created-files inventory))
-           ;; BUG: after creation, links are not updated
-           (when (and (logseq-org-roam--update-all not-created-files
-                                                   inventory 'links fuzzy-dict)
-                      modified-files)
-             (run-hooks 'logseq-org-roam-updated-hook))
+           (if (= 0 (logseq-org-roam--inventory-all
+                     files inventory force_flag (append '(first-section) link-parts)))
+               (progn
+                 (princ "No updates to perform\n")
+                 ;; Check errors in inventory none-the-less
+                 ;; TODO: write dedicated interactive function for this
+                 (logseq-org-roam--check-errors files inventory))
+             (setq modified-files
+                   (logseq-org-roam--update-all files inventory))
+             (when modified-files
+               (logseq-org-roam--inventory-update modified-files inventory
+                                                  (append '(first-section)
+                                                          link-parts)))
+             (when (memq 'fuzzy-links link-parts)
+               (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
+                                 files inventory)))
+             ;; Do as much work as possible, but beyond this point, the errors
+             ;; (modified files, parse or update errors) could affect accuracy
+             ;; of the changes
+             (logseq-org-roam--check-errors files inventory)
+             (setq not-created-files files)
+             (when create_flag
+               (setq created-files
+                     ;; BUG: file links seems to not be created
+                     (logseq-org-roam--create-from files inventory
+                                                   fuzzy-dict))
+               (logseq-org-roam--inventory-update created-files inventory
+                                                  ;; No links added to new files
+                                                  '(first-section))
+               (logseq-org-roam--check-errors created-files inventory))
+             ;; BUG: after creation, links are not updated
+             (when (and (logseq-org-roam--update-all not-created-files
+                                                     inventory 'links fuzzy-dict)
+                        modified-files)
+               (run-hooks 'logseq-org-roam-updated-hook)))
            ;; TODO: Add summary of results
            ;; TODO: timing should be `unwind-protect'
            (setq elapsed (float-time (time-subtract (current-time) start)))
