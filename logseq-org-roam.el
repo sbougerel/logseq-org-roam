@@ -114,11 +114,11 @@
 Value is a symbol, only the following are recognized:
 - \\='files
 - \\='fuzzy
-- nil or \\='both (default, if unrecognized)
+- nil (default, if unrecognized)
 
 You should customize this value based on your
 \":org-mode/insert-file-link?\" setting in Logseq.  Values other
-than \\='both save some processing time.
+than nil save some processing time.
 
 Links considered as candidates to be converted to `org-roam'
 ID links are of 2 types:
@@ -361,7 +361,6 @@ if it was previously created."
              (unless (derived-mode-p 'org-mode)
                (delay-mode-hooks
                  (let ((org-inhibit-startup t)) (org-mode))))
-             ;; BUG: save-buffer hooks are not running
              ,@body)
          (unless ,exist-buf (kill-buffer ,buf))))))
 
@@ -691,6 +690,7 @@ that were parsed."
                                 (plist-put plist :parse-error err)
                                 inventory)))
           (logseq-org-roam--with-temp-buffer file
+            (princ (concat "- Parsing " (logseq-org-roam--fl file) "\n"))
             (let ((new_plist (plist-put plist :hash
                                         (logseq-org-roam--secure-hash
                                          'sha256 (current-buffer)))))
@@ -762,14 +762,17 @@ other, there is no unique target for titled links to these files.
 
 Return a map of fuzzy links of INVENTORY keys or nil if conflicts
 were found."
+  ;; TODO: refactor without `conflicts', can?
+  (princ "** Building dictionary of titles and aliases:\n")
   (let ((dict (make-hash-table :test #'equal))
         (conflicts (make-hash-table :test #'equal))
-        conflicts-p)
+        (conflict-count 0))
     (dolist (file files)
       (when-let ((plist (gethash file inventory)))
         (unless (or (plist-get plist :modified-p)
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
+          ;; NOTE: Titles should not be empty here
           ;; Aliases and title from the same file don't conflict
           (let ((merged (seq-uniq
                          (append
@@ -780,6 +783,7 @@ were found."
               (if (and (not (gethash target conflicts))
                        (not (gethash target dict)))
                   (puthash target file dict)
+                (setq conflict-count (1+ conflict-count))
                 (unless (gethash target conflicts)
                   (puthash target (gethash target dict) conflicts)
                   (puthash target 'conflict dict))
@@ -789,10 +793,6 @@ were found."
                        (other-file (gethash target conflicts))
                        (other-plist (gethash other-file inventory))
                        (other-title-p (equal target (downcase (plist-get other-plist :title)))))
-                  ;; TODO log empty titles too
-                  (unless conflicts-p
-                    (princ "** Issues building dictionary of titles and aliases:\n")
-                    (setq conflicts-p t))
                   (princ (concat "- The "
                                  (if this-title-p "title" "alias")
                                  " \"" target "\" in "
@@ -803,6 +803,8 @@ were found."
                                  (logseq-org-roam--fl other-file)
                                  ", links to \"" target
                                  "\" will not be converted.\n")))))))))
+    (princ (format "%s entries in total\n" (hash-table-count dict)))
+    (princ (format "%s conflicts\n" conflict-count))
     dict))
 
 (defun logseq-org-roam--buffer-title ()
@@ -830,7 +832,7 @@ buffer during the update."
          (beg (point-min)))
      (goto-char beg)
      (unless first-section-p
-       (insert "\n") ;; External functions should only modify buffer within first section
+       (insert "\n") ;; Empty line is needed to create first section
        (backward-char))
      (unless (plist-get plist :id)
        (org-id-get-create))
@@ -882,6 +884,7 @@ only with file links, this hashtable is not used."
             (narrow-to-region beg end)
             (goto-char beg)
             (delete-region beg end)
+            ;; TODO: log link updates
             (if descr
                 (insert (concat "[[id:" id "][" descr "]]"))
               (insert (concat "[[id:" id "][" path "]]")))))))
@@ -897,9 +900,7 @@ First sections and links are never updated in the same pass,
 since to update the links, all first sections must be inventoried
 first."
   (let (updated-files log-p)
-    (princ (concat "** "
-                   (if link-p "Links" "First sections")
-                   " of the following files are updated:\n"))
+    (princ (concat "** Updating files:\n"))
     (dolist (file files)
       (when-let ((plist (gethash file inventory)))
         (unless (or (plist-get plist :modified-p)
@@ -924,16 +925,15 @@ first."
                              (logseq-org-roam--secure-hash
                               'sha256 (current-buffer)))
                 (throw 'fault 'hash-mismatch))
+              (princ (concat "- Updating " (logseq-org-roam--fl file) "\n"))
               (if link-p
                   (logseq-org-roam--update-links (plist-get plist :links)
                                                  inventory fuzzy-dict)
                 (logseq-org-roam--update-first-section plist))
               (when (buffer-modified-p)
-
                 (save-buffer)  ;; NOTE: runs org-roam hook and formatters
                 (push file updated-files)
-                (setq log-p t)
-                (princ (concat "- Updated " (logseq-org-roam--fl file) "\n"))))))))
+                (setq log-p t)))))))
     (unless log-p
       (princ "No updates found\n"))
     updated-files))
@@ -1084,6 +1084,7 @@ Return the list of new files created."
 
 (defun logseq-org-roam--check-errors (files inventory)
   "Throw when FILES in INVENTORY have errors."
+  ;; TODO: should report empty ID or empty TITLE too!
   (dolist (file files)
     (when-let ((plist (gethash file inventory)))
       (when (or (plist-get plist :modified-p)
@@ -1278,9 +1279,10 @@ the documentation string of `logseq-org-roam-capture'."
                   files force_flag (append '(first-section) link-parts)))
            (setq modified-files
                  (logseq-org-roam--update-all files inventory))
-           (logseq-org-roam--inventory-update modified-files inventory
-                                              (append '(first-section)
-                                                      link-parts))
+           (when modified-files
+             (logseq-org-roam--inventory-update modified-files inventory
+                                                (append '(first-section)
+                                                        link-parts)))
            (when (memq 'fuzzy-links link-parts)
              (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
                                files inventory)))
@@ -1291,19 +1293,20 @@ the documentation string of `logseq-org-roam-capture'."
            (setq not-created-files files)
            (when create_flag
              (setq created-files
+                   ;; BUG: file links seems to not be created
                    (logseq-org-roam--create-from files inventory
                                                  fuzzy-dict))
              (logseq-org-roam--inventory-update created-files inventory
                                                 ;; No links added to new files
                                                 '(first-section))
-             (logseq-org-roam--check-errors created-files inventory)
-             (setq files (append created-files files)))
+             (logseq-org-roam--check-errors created-files inventory))
+           ;; BUG: after creation, links are not updated
            (when (and (logseq-org-roam--update-all not-created-files
                                                    inventory 'links fuzzy-dict)
                       modified-files)
              (run-hooks 'logseq-org-roam-updated-hook))
-           (logseq-org-roam--check-errors files inventory)
            ;; TODO: Add summary of results
+           ;; TODO: timing should be `unwind-protect'
            (setq elapsed (float-time (time-subtract (current-time) start)))
            (princ (format "Completed in %.3f seconds\n\n" elapsed))))))))
 

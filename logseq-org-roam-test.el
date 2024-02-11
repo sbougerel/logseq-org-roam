@@ -275,14 +275,11 @@ A [[test links]] matching headline.
   (let ((inventory (make-hash-table :test #'equal))
         (org-roam-directory default-directory)
         (files '("x" "y" "z")))
-    (puthash "x" '(:title-p t
-                   :title "A"
+    (puthash "x" '(:title "A"
                    :aliases ("b" "c")) inventory)
-    (puthash "y" '(:title-p t
-                   :title "B"
+    (puthash "y" '(:title "B"
                    :aliases ("d" "c")) inventory)
-    (puthash "z" '(:title-p t
-                   :title "D"
+    (puthash "z" '(:title "D"
                    :aliases ("e" "f")) inventory)
     (with-temp-buffer
       (let* ((standard-output (current-buffer))
@@ -297,7 +294,7 @@ A [[test links]] matching headline.
         (should (equal (gethash "e" actual_dict) "z"))
         (should (equal (gethash "f" actual_dict) "z"))
         (should (equal (buffer-string)
-                       "** Issues building dictionary of titles and aliases:
+                       "** Building dictionary of titles and aliases:
 - The title \"b\" in [[file:y][y]] conflicts with the alias in [[file:x][x]], links to \"b\" will not be converted.
 - The alias \"c\" in [[file:y][y]] conflicts with the alias in [[file:x][x]], links to \"c\" will not be converted.
 - The title \"d\" in [[file:z][z]] conflicts with the alias in [[file:y][y]], links to \"d\" will not be converted.
@@ -672,10 +669,17 @@ A [[test links]] matching headline.
   (mocker-let
    ((logseq-org-roam--update-links
      (p i d)
-     ((:occur 2 :input-matcher #'always :output-generator #'ignore)))
+     ((:occur 2
+       :input-matcher (lambda (p i d)
+                        (and (consp p)
+                             (hash-table-p i)))
+       :output-generator #'ignore)))
     (logseq-org-roam--find-buffer-visiting
      (f &optional p)
-     ((:occur 2 :input-matcher #'always :output nil)))
+     ((:occur 2
+       :input-matcher (lambda (f &optional p)
+                        (stringp f))
+       :output nil)))
     (logseq-org-roam--secure-hash
      (algo obj &optional s e b)
      ((:min-occur 2 :max-occur 2
