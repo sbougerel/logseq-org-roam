@@ -709,7 +709,8 @@ files already indexed are ever modififed).
 
 The argument PARTS ensures that the function only parses the
 necessary parts of each files."
-  (princ "** Inventory initially:\n")
+  ;; TODO: refactor to return the list of left-over files
+  (princ "** Initial inventory:\n")
   (let* ((inventory (logseq-org-roam--inventory-init files))
          count_cached
          count_external
