@@ -1028,8 +1028,7 @@ Return the list of new files created."
                 (plist-get plist :external-p)
                 (plist-get plist :parse-error)
                 (plist-get plist :cache-p)
-                (plist-get plist :update-error)
-                (not (plist-get plist :links)))
+                (plist-get plist :update-error))
           (pcase-dolist (`(,type _ _ ,path ,descr _) (plist-get plist :links))
             (let (new-path new-title)
               (cond
