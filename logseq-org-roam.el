@@ -335,12 +335,8 @@ in `logseq-org-roam-create-translate-default'."
        (with-current-buffer standard-output
          (setq inhibit-read-only nil)
          (setq buffer-read-only t)
-         (setq org-inhibit-startup t)
-         (setq org-startup-with-beamer-mode nil)
-         (setq org-startup-with-inline-images nil)
-         (setq org-startup-with-latex-preview nil)
-         (org-mode) ;; back to org-mode
-         (goto-char (point-max))))))
+         (goto-char (point-max))
+         (insert "You can set this buffer to `org-mode' to navigate links\n")))))
 
 (defmacro logseq-org-roam--with-edit-buffer (file &rest body)
   "Find an existing buffer for FILE, set `org-mode' and execute BODY.
@@ -376,11 +372,12 @@ previously created."
      (logseq-org-roam--insert-file-contents ,file)
      ,@body))
 
+;; TODO: test
 (defmacro logseq-org-roam--catch-fun (sym fun &rest body)
   "Catch SYM during BODY's execution and pass it to FUN."
   (declare (indent 2) (debug t))
   (let ((result (make-symbol "result")))
-    `(let ((,result (catch ',sym ,@body)))
+    `(let ((,result (catch ,sym ,@body)))
        (when (and ,result (symbolp ,result))
          (,fun ,result)))))
 
@@ -444,8 +441,8 @@ date, and the corresponding time is returned."
          (day (nth 3 parsed))
          (time (safe-date-to-time hacked-date)))
     (if (and year month day
-             (equal (format-time-string date-format time)
-                    maybe-date))
+             (string= (format-time-string date-format time)
+                      maybe-date))
         time
       0)))
 
@@ -524,12 +521,12 @@ being modified in a buffer."
         (lambda (node-property)
           (let ((key (org-element-property :key node-property)))
             (cond
-             ((and (equal "ID" key)
+             ((and (string= "ID" key)
                    (logseq-org-roam--value-string-p node-property))
               (setq plist (plist-put plist :id
                                      (org-element-property :value
                                                            node-property))))
-             ((and (equal "ROAM_ALIASES" key)
+             ((and (string= "ROAM_ALIASES" key)
                    (logseq-org-roam--value-string-p node-property))
               (setq plist (plist-put plist :roam-aliases
                                      (split-string-and-unquote
@@ -545,13 +542,13 @@ being modified in a buffer."
     (lambda (keyword)
       (let ((key (org-element-property :key keyword)))
         (cond
-         ((equal "TITLE" key)
+         ((string= "TITLE" key)
           (setq plist (plist-put plist :title-point
                                  (org-element-property :begin keyword)))
           (when (logseq-org-roam--value-string-p keyword)
             (setq plist (plist-put plist :title
                                    (org-element-property :value keyword)))))
-         ((and (equal "ALIAS" key)
+         ((and (string= "ALIAS" key)
                (logseq-org-roam--value-string-p keyword))
           ;; TODO: support anycase aliases, to ensure they appear in the same
           ;; case in ROAM_ALIASES.  This should be done with computing union /
@@ -587,7 +584,7 @@ being modified in a buffer."
   (let ((links (plist-get plist :links)))
     (org-element-map data 'link
       (lambda (link)
-        (when (and (equal (org-element-property :type link) "file")
+        (when (and (string= (org-element-property :type link) "file")
                    (org-element-property :contents-begin link)
                    (not (org-element-property :search-option link)))
           (let* ((path (org-element-property :path link))
@@ -628,7 +625,7 @@ ID links."
                       (org-link--normalize-string
                        (org-element-property :raw-value element))) t text-targets))
            ((and (eq type 'link)
-                 (equal (org-element-property :type element) "fuzzy"))
+                 (string= (org-element-property :type element) "fuzzy"))
             (let ((path (org-element-property :path element))
                   (content (org-element-property :contents-begin element)))
               (unless (or
@@ -789,10 +786,10 @@ were found."
                   (puthash target 'conflict dict))
                 ;; Log the conflict
                 (let* ((this-file file)
-                       (this-title-p (equal target (downcase (plist-get plist :title))))
+                       (this-title-p (string= target (downcase (plist-get plist :title))))
                        (other-file (gethash target conflicts))
                        (other-plist (gethash other-file inventory))
-                       (other-title-p (equal target (downcase (plist-get other-plist :title)))))
+                       (other-title-p (string= target (downcase (plist-get other-plist :title)))))
                   (princ (concat "- The "
                                  (if this-title-p "title" "alias")
                                  " \"" target "\" in "
@@ -865,7 +862,7 @@ only with file links, this hashtable is not used."
   (catch 'fault
     ;; Even hash has a small chance of collision
     (pcase-dolist (`(_ ,beg ,end _ _ ,raw) links)
-      (unless (equal (buffer-substring-no-properties beg end) raw)
+      (unless (string= (buffer-substring-no-properties beg end) raw)
         (throw 'fault 'mismatch-link)))
     ;; Avoid offset calculations with buffer updates
     (sort links (lambda (a b) (> (nth 1 a) (nth 1 b))))
@@ -921,9 +918,9 @@ first."
                                 (plist-put plist :update-error err)
                                 inventory))
             (logseq-org-roam--with-edit-buffer file
-              (unless (equal (plist-get plist :hash)
-                             (logseq-org-roam--secure-hash
-                              'sha256 (current-buffer)))
+              (unless (string= (plist-get plist :hash)
+                               (logseq-org-roam--secure-hash
+                                'sha256 (current-buffer)))
                 (throw 'fault 'hash-mismatch))
               (princ (concat "- Updating " (logseq-org-roam--fl file) "\n"))
               (if link-p
@@ -1072,7 +1069,7 @@ Return the list of new files created."
   ;; TODO: log other settings
   (princ
    (concat
-    (format "\n* Ran %s\n" (format-time-string "%x at %X"))
+    (format "* Ran on %s\n" (format-time-string "%x at %X"))
     (format "Using Org-roam directory: %s\n" org-roam-directory)
     (format "Logseq pages directory is: %s\n" logseq-org-roam-pages-directory)
     (format "Logseq journal directory is: %s\n" logseq-org-roam-journals-directory)
