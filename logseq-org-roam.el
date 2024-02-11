@@ -921,7 +921,6 @@ first."
                                (logseq-org-roam--secure-hash
                                 'sha256 (current-buffer)))
                 (throw 'fault 'hash-mismatch))
-              (princ (concat "- Updating " (logseq-org-roam--fl file) "\n"))
               (if link-p
                   (logseq-org-roam--update-links (plist-get plist :links)
                                                  inventory fuzzy-dict)
@@ -929,6 +928,8 @@ first."
               (when (buffer-modified-p)
                 (save-buffer)  ;; NOTE: runs org-roam hook and formatters
                 (push file updated-files)
+                (princ (concat "- Updated " (if link-p "first section" "links")
+                               " of " (logseq-org-roam--fl file) "\n"))
                 (setq log-p t)))))))
     (unless log-p
       (princ "No updates found\n"))
@@ -1110,7 +1111,17 @@ Return non-nil if issues where found."
             (setq error-p t))
           (princ (concat "- Error " (format "%s" err)
                          " updating " (logseq-org-roam--fl file)
-                         ", left as-is\n")))))
+                         ", left as-is\n")))
+        (when (not (plist-get plist :id))
+          (unless error-p
+            (princ "** Verify the syntax in the following files:\n")
+            (setq error-p t))
+          (princ (concat "- No title found for " (logseq-org-roam--fl file) "\n")))
+        (when (not (plist-get plist :title))
+          (unless error-p
+            (princ "** Verify the syntax in the following files:\n")
+            (setq error-p t))
+          (princ (concat "- No title found for " (logseq-org-roam--fl file) "\n")))))
     (when modified
       (princ "** Save the following files before continuing:\n")
       (dolist (file modified)
@@ -1269,10 +1280,12 @@ the documentation string of `logseq-org-roam-capture'."
                (logseq-org-roam--log-errors files inventory)
                (display-warning 'logseq-org-roam
                                 (concat "Stopped with errors, see "
-                                        logseq-org-roam--log-buffer-name
+                                        (format logseq-org-roam--log-buffer-name
+                                                org-roam-directory)
                                         " buffer")
                                 :error))
            (setq inventory
+                 ;; TODO calculate files that can be updated (all - cache - external)
                  (logseq-org-roam--inventory-all
                   files force_flag (append '(first-section) link-parts)))
            (setq modified-files
@@ -1306,7 +1319,7 @@ the documentation string of `logseq-org-roam-capture'."
            ;; TODO: Add summary of results
            ;; TODO: timing should be `unwind-protect'
            (setq elapsed (float-time (time-subtract (current-time) start)))
-           (princ (format "Completed in %.3f seconds\n\n" elapsed))))))))
+           (princ (format "Completed in %.3f seconds\n" elapsed))))))))
 
 (provide 'logseq-org-roam)
 ;;; logseq-org-roam.el ends here
