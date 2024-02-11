@@ -327,9 +327,9 @@ in `logseq-org-roam-create-translate-default'."
              (setq buffer-undo-list t) ;; disable undo
              (setq inhibit-read-only t)
              (setq inhibit-modification-hooks t)
+             (goto-char (point-max))
              (if (/= (point-min) (point-max))
                  (insert "\n\n"))
-             (goto-char (point-max))
              (current-buffer))))
      (prog1 (progn ,@body)
        (with-current-buffer standard-output
@@ -1081,87 +1081,59 @@ Return the list of new files created."
 
 ;; TODO: test
 (defun logseq-org-roam--check-errors (files inventory)
-  "Throw when FILES in INVENTORY have errors."
-  (dolist (file files)
-    (when-let ((plist (gethash file inventory)))
-      (when (or (plist-get plist :modified-p)
-                (plist-get plist :parse-error)
-                (plist-get plist :update-error)
-                (not (plist-get plist :title))
-                (not (plist-get plist :id)))
-        (throw 'stop 'error-encountered)))))
-
-(defun logseq-org-roam--log-errors (files inventory)
   "Log parsing issues with FILES in INVENTORY.
 Return non-nil if issues where found."
-  (let (error-p modified)
+  (princ "** Verifing files:\n")
+  (let (error-p)
     (dolist (file files)
-      (when-let ((plist (gethash file inventory)))
-        (when (plist-get plist :modified-p)
-          (push file modified))
-        (when-let ((err (plist-get plist :parse-error)))
-          (unless error-p
-            (princ "** Verify the syntax in the following files:\n")
-            (setq error-p t))
-          (princ (concat "- Error " (format "%s" err)
-                         " parsing " (logseq-org-roam--fl file) ", skipped\n")))
-        (when-let ((err (plist-get plist :update-error)))
-          (unless error-p
-            (princ "** Verify the syntax in the following files:\n")
-            (setq error-p t))
-          (princ (concat "- Error " (format "%s" err)
-                         " updating " (logseq-org-roam--fl file)
-                         ", left as-is\n")))
-        (when (not (plist-get plist :id))
-          (unless error-p
-            (princ "** Verify the syntax in the following files:\n")
-            (setq error-p t))
-          (princ (concat "- No title found for " (logseq-org-roam--fl file) "\n")))
-        (when (not (plist-get plist :title))
-          (unless error-p
-            (princ "** Verify the syntax in the following files:\n")
-            (setq error-p t))
-          (princ (concat "- No title found for " (logseq-org-roam--fl file) "\n")))))
-    (when modified
-      (princ "** Save the following files before continuing:\n")
-      (dolist (file modified)
-        (princ (concat "- " (logseq-org-roam--fl file)))))
-    (when (or modified error-p)
-      (princ (concat "** Stopped with errors:
-Please save any work in progress or fix syntax issues in the
-files mentionned above before re-running the function again.
-Errors can impact the accuracy of file creation or link
-conversion.\n\n")))))
+      (let ((plist (gethash file inventory)))
+        (if (not plist)
+            (progn
+              (setq error-p t)
+              (princ (concat "- File " (logseq-org-roam--fl file)
+                             "blank or not parsed\n")))
+          (when (plist-get plist :modified-p)
+            (setq error-p t)
+            (princ (concat "- Save the buffer visiting " (logseq-org-roam--fl file) "\n")))
+          (when-let ((err (plist-get plist :parse-error)))
+            (setq error-p t)
+            (princ (concat "- Error " (format "%s" err)
+                           " parsing " (logseq-org-roam--fl file) ", skipped\n")))
+          (when-let ((err (plist-get plist :update-error)))
+            (setq error-p t)
+            (princ (concat "- Error " (format "%s" err)
+                           " updating " (logseq-org-roam--fl file)
+                           ", left as-is\n")))
+          (when (not (plist-get plist :id))
+            (setq error-p t)
+            (princ (concat "- No id found for " (logseq-org-roam--fl file) "\n")))
+          (when (not (plist-get plist :title))
+            (setq error-p t)
+            (princ (concat "- No title found for " (logseq-org-roam--fl file) "\n"))))))
+    (if (not error-p)
+        (princ "No errors.\n")
+      (princ "Errors found:\nPlease save any work in progress or fix syntax issues in the files mentionned above before re-running the function again. Errors can impact the accuracy of file creation or link conversion.\n")
+      (throw 'stop 'error-encountered))))
 
 (defun logseq-org-roam--sanity-check ()
   "Check that `org-roam' is installed and configured."
   (cond
    ((not (featurep 'org-roam))
-    (display-warning 'logseq-org-roam
-                     "`org-roam' is not installed"
-                     :error) nil)
+    (user-error "logseq-org-roam: `org-roam' is not installed"))
    ((not org-roam-directory)
-    (display-warning 'logseq-org-roam
-                     "`org-roam-directory' is not set"
-                     :error) nil)
+    (user-error "logseq-org-roam: `org-roam-directory' is not set"))
    ((not (file-directory-p org-roam-directory))
-    (display-warning 'logseq-org-roam
-                     "`org-roam-directory' is not a directory"
-                     :error) nil)
+    (user-error "logseq-org-roam: `org-roam-directory' is not a directory"))
    ((not (logseq-org-roam--file-exists-p
           (logseq-org-roam--expand-file
            logseq-org-roam-pages-directory
            org-roam-directory)))
-    (display-warning 'logseq-org-roam
-                     "Logseq pages must be found directly under `org-roam-directory'"
-                     :error) nil)
+    (user-error "logseq-org-roam: Logseq pages must be found directly under `org-roam-directory'"))
    ((not (logseq-org-roam--file-exists-p
           (logseq-org-roam--expand-file
            logseq-org-roam-journals-directory
            org-roam-directory)))
-    (display-warning 'logseq-org-roam
-                     "Logseq journals must be found directly under `org-roam-directory'"
-                     :error) nil)
+    (user-error "logseq-org-roam: Logseq journals must be found directly under `org-roam-directory'"))
    (t)))
 
 ;;;###autoload
@@ -1277,7 +1249,6 @@ the documentation string of `logseq-org-roam-capture'."
               fuzzy-dict)
          (logseq-org-roam--catch-fun 'stop
              (lambda (_)
-               (logseq-org-roam--log-errors files inventory)
                (display-warning 'logseq-org-roam
                                 (concat "Stopped with errors, see "
                                         (format logseq-org-roam--log-buffer-name
