@@ -685,15 +685,15 @@ that were parsed."
               'fault (lambda (err)
                        (puthash file
                                 (plist-put plist :parse-error err)
-                                inventory)))
-          (logseq-org-roam--with-temp-buffer file
-            (princ (concat "- Parsing " (logseq-org-roam--fl file) "\n"))
-            (let ((new_plist (plist-put plist :hash
-                                        (logseq-org-roam--secure-hash
-                                         'sha256 (current-buffer)))))
-              (setq new_plist
-                    (logseq-org-roam--parse-buffer new_plist parts))
-              (puthash file new_plist inventory))))))
+                                inventory))
+            (logseq-org-roam--with-temp-buffer file
+              (princ (concat "- Parsing " (logseq-org-roam--fl file) "\n"))
+              (let ((new_plist (plist-put plist :hash
+                                          (logseq-org-roam--secure-hash
+                                           'sha256 (current-buffer)))))
+                (setq new_plist
+                      (logseq-org-roam--parse-buffer new_plist parts))
+                (puthash file new_plist inventory)))))))
     count))
 
 (defun logseq-org-roam--inventory-all (files force parts)
