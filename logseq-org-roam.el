@@ -327,16 +327,16 @@ in `logseq-org-roam-create-translate-default'."
              (setq buffer-undo-list t) ;; disable undo
              (setq inhibit-read-only t)
              (setq inhibit-modification-hooks t)
-             (if (= (point-min) (point-max))
+             (if (/= (point-min) (point-max))
                  (insert "\n\n"))
              (goto-char (point-max))
              (current-buffer))))
      (prog1 (progn ,@body)
        (with-current-buffer standard-output
-         (setq inhibit-read-only nil)
-         (setq buffer-read-only t)
          (goto-char (point-max))
-         (insert "You can set this buffer to `org-mode' to navigate links\n")))))
+         (insert "You can set this buffer to `org-mode' to navigate links\n")
+         (setq inhibit-read-only nil)
+         (setq buffer-read-only t)))))
 
 (defmacro logseq-org-roam--with-edit-buffer (file &rest body)
   "Find an existing buffer for FILE, set `org-mode' and execute BODY.
@@ -389,15 +389,15 @@ previously created."
 
 (defun logseq-org-roam-pages-p (file)
   "Return non-nil if FILE path is under the Logseq pages directory."
-  (file-in-directory-p file
-                       (expand-file-name logseq-org-roam-pages-directory
-                                         org-roam-directory)))
+  (string= (directory-file-name (file-name-directory file))
+           (expand-file-name logseq-org-roam-pages-directory
+                             org-roam-directory)))
 
 (defun logseq-org-roam-journals-p (file)
   "Return non-nil if FILE path is under the Logseq journal directory."
-  (file-in-directory-p file
-                       (expand-file-name logseq-org-roam-journals-directory
-                                         org-roam-directory)))
+  (string= (directory-file-name (file-name-directory file))
+           (expand-file-name logseq-org-roam-journals-directory
+                             org-roam-directory)))
 
 (defun logseq-org-roam-logseq-p (file)
   "Return non-nil if FILE path is under the Logseq journal or pages directory."
@@ -834,7 +834,6 @@ buffer during the update."
      (unless (plist-get plist :id)
        (org-id-get-create))
      (unless (plist-get plist :title)
-       ;; TODO: handle case where title keyword is present but empty
        (let ((title (logseq-org-roam--buffer-title)))
          (goto-char (+ (or (plist-get plist :title-point) beg)
                        (- (buffer-size) start-size)
@@ -1079,14 +1078,16 @@ Return the list of new files created."
     "With settings:\n"
     (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types))))
 
+;; TODO: test
 (defun logseq-org-roam--check-errors (files inventory)
   "Throw when FILES in INVENTORY have errors."
-  ;; TODO: should report empty ID or empty TITLE too!
   (dolist (file files)
     (when-let ((plist (gethash file inventory)))
       (when (or (plist-get plist :modified-p)
                 (plist-get plist :parse-error)
-                (plist-get plist :update-error))
+                (plist-get plist :update-error)
+                (not (plist-get plist :title))
+                (not (plist-get plist :id)))
         (throw 'stop 'error-encountered)))))
 
 (defun logseq-org-roam--log-errors (files inventory)
