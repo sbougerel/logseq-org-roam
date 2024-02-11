@@ -915,6 +915,9 @@ first."
                                                 (plist-get plist :roam-aliases))))))
           (logseq-org-roam--catch-fun
               'fault (lambda (err)
+                       (princ (format "- Error updating %s of %s\n"
+                                      (if link-p "first section" "links")
+                                      (logseq-org-roam--fl file)))
                        (puthash file
                                 (plist-put plist :update-error err)
                                 inventory))

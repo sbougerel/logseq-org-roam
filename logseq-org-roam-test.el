@@ -298,6 +298,8 @@ A [[test links]] matching headline.
 - The title \"b\" in [[file:y][y]] conflicts with the alias in [[file:x][x]], links to \"b\" will not be converted.
 - The alias \"c\" in [[file:y][y]] conflicts with the alias in [[file:x][x]], links to \"c\" will not be converted.
 - The title \"d\" in [[file:z][z]] conflicts with the alias in [[file:y][y]], links to \"d\" will not be converted.
+6 entries in total
+3 conflicts
 "))))))
 
 (ert-deftest logseq-org-roam--update-links ()
@@ -498,11 +500,16 @@ A [[test links]] matching headline.
 
 ;; TODO mock internal functions instead?
 (ert-deftest logseq-org-roam--inventory-all--normal ()
-  (let ((org-roam-directory default-directory)
-        inventory
-        logs)
+  (let* ((org-roam-directory default-directory)
+         (files '("a" "b" "c"))
+         (inventory (logseq-org-roam--inventory-init files))
+         logs actual)
     (mocker-let
-     ((logseq-org-roam-logseq-p
+     ((logseq-org-roam--fl
+       (f)
+       ((:input-matcher (lambda (f) (stringp f))
+         :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
+      (logseq-org-roam-logseq-p
        (f)
        ((:input '("a") :output t)
         (:input '("b") :output t)
@@ -525,12 +532,11 @@ A [[test links]] matching headline.
 *"))))))
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
-         (setq inventory
+         (setq actual
                (logseq-org-roam--inventory-all
-                '("a" "b" "c") t '(first-section file-links fuzzy-links))))
+                files inventory t '(first-section file-links fuzzy-links))))
        (setq logs (buffer-string))))
-    (should (hash-table-p inventory))
-    (should (equal (hash-table-count inventory) 3))
+    (should (equal actual 3))
     (should (equal (gethash "a" inventory 'not-found)
                    '(:hash "0402a679d81d52814c2f30094d1bcbf8aeb2da2c7b98a0624267585405219b76")))
     (should (equal (gethash "b" inventory 'not-found)
@@ -542,17 +548,24 @@ A [[test links]] matching headline.
                      :first-section-p t
                      :title-point 1
                      :title "Test note")))
-    (should (equal (substring logs 0 200)
-                   "** Inventory initially:
+    (should (equal logs
+                   "** Initial inventory:
+- Parsed [[file:a][a]]
+- Parsed [[file:b][b]]
+- Parsed [[file:c][c]]
 3 files found in org-roam directory
 0 files being visited in a modified buffer will be skipped
 0 files are external to Logseq and will not be modified
-3 files have been parsed
+3 files have been parsed without errors
 "))))
 
 (ert-deftest logseq-org-roam--inventory-update--no-change ()
   (mocker-let
-   ((logseq-org-roam-logseq-p
+   ((logseq-org-roam--fl
+     (f)
+     ((:input-matcher (lambda (f) (stringp f))
+       :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
+    (logseq-org-roam-logseq-p
      (f)
      ((:input '("a") :output t)
       (:input '("b") :output t)
@@ -577,22 +590,23 @@ A [[test links]] matching headline.
                            (insert "#+title: Test note
 * Logseq page with title
 *"))))))
-   (let ((org-roam-directory default-directory)
-         (expected-logs "** Inventory update:\n3 files have been parsed")
-         inventory
-         logs)
+   (let* ((org-roam-directory default-directory)
+          (expected-logs "** Inventory update:
+- Parsed [[file:a][a]]
+- Parsed [[file:b][b]]
+- Parsed [[file:c][c]]
+3 files have been parsed")
+          (files '("a" "b" "c"))
+          (inventory (logseq-org-roam--inventory-init files))
+          logs)
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
-         (setq inventory
-               (logseq-org-roam--inventory-all
-                '("a" "b" "c") t
-                '(first-section file-links fuzzy-links)))))
+         (logseq-org-roam--inventory-all
+          files inventory t '(first-section file-links fuzzy-links))))
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
          (logseq-org-roam--inventory-update
-          '("a" "b" "c")
-          inventory
-          '(first-section file-links fuzzy-links)))
+          files inventory '(first-section file-links fuzzy-links)))
        (setq logs (buffer-string)))
      (should (hash-table-p inventory))
      (should (equal (hash-table-count inventory) 3))
@@ -617,22 +631,25 @@ A [[test links]] matching headline.
      ((:occur 2 :input-matcher #'always :output-generator #'ignore)))
     (logseq-org-roam--find-buffer-visiting
      (f &optional p)
-     ((:occur 2 :input-matcher #'always :output nil)))
+     ((:occur 3 :input-matcher #'always :output nil)))
     (logseq-org-roam--secure-hash
      (algo obj &optional s e b)
-     ((:min-occur 2 :max-occur 2
+     ((:occur 3
        :input-matcher #'always :output "hash")))
     (logseq-org-roam--find-file-noselect
      (f &optional n r w)
      ((:input '("a" nil nil nil) ; no modifications
        :output-generator (lambda (f &optional n r w)
                            (get-buffer-create " *foo*" t)))
-      (:input '("h" nil nil nil) ; with modifications
+      (:input '("h" nil nil nil) ; with modifications!
        :output-generator (lambda (f &optional n r w)
                            (let ((buf (get-buffer-create " *foo*" t)))
                              (with-current-buffer buf
                                (set-buffer-modified-p t))
-                             buf)))))
+                             buf)))
+      (:input '("i" nil nil nil) ; no modifications
+       :output-generator (lambda (f &optional n r w)
+                           (get-buffer-create " *foo*" t)))))
     (save-buffer
      (&optional b)
      ((:occur 1
@@ -651,17 +668,19 @@ A [[test links]] matching headline.
                                 :id "foo"
                                 :aliases '("foo")
                                 :roam-aliases '("foo")))
-                        ("h" . (:hash "hash")))))
+                        ("h" . (:hash "hash"))
+                        ("i" . (:hash "wrong hash")))))
           (expected '("h")))
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
          (setq actual (logseq-org-roam--update-all
-                       '("a" "b" "c" "d" "e" "f" "g" "h")
+                       '("a" "b" "c" "d" "e" "f" "g" "h" "i")
                        inventory))
          (setq logs (buffer-string))))
      (should (equal actual expected))
      (should (equal (gethash "a" inventory) '(:hash "hash")))
      (should (equal (gethash "h" inventory) '(:hash "hash")))
+     (should (equal (gethash "i" inventory) '(:hash "wrong hash" :update-error 'hash-mismatch)))
      (should (equal logs
                     "** First sections of the following files are updated:\n- Updated [[file:h][h]]\n")))))
 
@@ -783,7 +802,7 @@ A [[test links]] matching headline.
        ((:input-matcher #'always :output t)))
       (logseq-org-roam--fl
        (f)
-       ((:input-matcher #'always
+       ((:input-matcher (lambda (f) (stringp f))
          :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
       (logseq-org-roam--find-file-noselect
        (f &optional n r w)
