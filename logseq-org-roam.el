@@ -325,8 +325,8 @@ in `logseq-org-roam-create-translate-default'."
              (setq buffer-read-only nil)
              (setq buffer-file-name nil)
              (setq buffer-undo-list t) ;; disable undo
-             (setq inhibit-read-only t)
-             (setq inhibit-modification-hooks t)
+             ;; (setq inhibit-read-only t) ;; TODO: not buffer local; relocate & unwind-protect
+             ;; (setq inhibit-modification-hooks t)  ;; TODO: not buffer local; relocate & unwind-protect
              (goto-char (point-max))
              (if (/= (point-min) (point-max))
                  (insert "\n\n"))
@@ -335,7 +335,7 @@ in `logseq-org-roam-create-translate-default'."
        (with-current-buffer standard-output
          (goto-char (point-max))
          (insert "You can set this buffer to `org-mode' to navigate links\n")
-         (setq inhibit-read-only nil)
+         ;; (setq inhibit-read-only nil)
          (setq buffer-read-only t)))))
 
 (defmacro logseq-org-roam--with-edit-buffer (file &rest body)
@@ -355,8 +355,7 @@ if it was previously created."
        (unwind-protect
            (with-current-buffer ,buf
              (unless (derived-mode-p 'org-mode)
-               (delay-mode-hooks
-                 (let ((org-inhibit-startup t)) (org-mode))))
+               (let ((org-inhibit-startup t)) (org-mode)))
              ,@body)
          (unless ,exist-buf (kill-buffer ,buf))))))
 
@@ -367,6 +366,8 @@ macro does not save the file, but will kill the buffer if it was
 previously created."
   (declare (indent 1) (debug t))
   `(with-temp-buffer
+     ;; relative path expansion needs this
+     (setq default-directory (file-name-directory ,file))
      (delay-mode-hooks
        (let ((org-inhibit-startup t)) (org-mode)))
      (logseq-org-roam--insert-file-contents ,file)
@@ -547,9 +548,9 @@ being modified in a buffer."
          ((string= "TITLE" key)
           (setq plist (plist-put plist :title-point
                                  (org-element-property :begin keyword)))
-          (when (logseq-org-roam--value-string-p keyword)
-            (setq plist (plist-put plist :title
-                                   (org-element-property :value keyword)))))
+          (if (logseq-org-roam--value-string-p keyword)
+              (setq plist (plist-put plist :title
+                                     (org-element-property :value keyword)))))
          ((and (string= "ALIAS" key)
                (logseq-org-roam--value-string-p keyword))
           ;; TODO: support anycase aliases, to ensure they appear in the same
@@ -586,22 +587,22 @@ being modified in a buffer."
   (let ((links (plist-get plist :links)))
     (org-element-map data 'link
       (lambda (link)
-        (when (and (string= (org-element-property :type link) "file")
-                   (org-element-property :contents-begin link)
-                   (not (org-element-property :search-option link)))
-          (let* ((path (org-element-property :path link))
-                 (true-path (logseq-org-roam--expand-file path)))
-            ;; Convert only links that point to org-roam files
-            (when (org-roam-file-p true-path)
-              (let* ((descr (buffer-substring-no-properties
-                             (org-element-property :contents-begin link)
-                             (org-element-property :contents-end link)))
-                     (begin (org-element-property :begin link))
-                     (end (- (org-element-property :end link)
-                             (org-element-property :post-blank link)))
-                     (raw (buffer-substring-no-properties begin end)))
-                (push `(file ,begin ,end ,path ,descr ,raw) links)))))))
-    (when links (setq plist (plist-put plist :links links))))
+        (if (and (string= (org-element-property :type link) "file")
+                 (org-element-property :contents-begin link)
+                 (not (org-element-property :search-option link)))
+            (let* ((path (org-element-property :path link))
+                   (true-path (logseq-org-roam--expand-file path)))
+              ;; Convert only links that point to org-roam files
+              (if (org-roam-file-p true-path)
+                  (let* ((descr (buffer-substring-no-properties
+                                 (org-element-property :contents-begin link)
+                                 (org-element-property :contents-end link)))
+                         (begin (org-element-property :begin link))
+                         (end (- (org-element-property :end link)
+                                 (org-element-property :post-blank link)))
+                         (raw (buffer-substring-no-properties begin end)))
+                    (push (list 'file begin end path descr raw) links)))))))
+    (if links (setq plist (plist-put plist :links links))))
   plist)
 
 (defun logseq-org-roam--parse-fuzzy-links (data plist)
@@ -644,13 +645,13 @@ ID links."
                        (end (- (org-element-property :end element)
                                (org-element-property :post-blank element)))
                        (raw (buffer-substring-no-properties begin end)))
-                  (push `(fuzzy ,begin ,end ,path ,descr, raw) links)))))
+                  (push (list 'fuzzy begin end path descr raw) links)))))
            ((eq type 'target)
             (puthash (downcase (org-element-property :value element)) t text-targets))))))
     ;; Filter out link that match targets, headlines or named elements
     (setq links (seq-filter (lambda (link) (not (gethash (nth 3 link) text-targets)))
                             links))
-    (when links (setq plist (plist-put plist :links links))))
+    (if links (setq plist (plist-put plist :links links))))
   plist)
 
 (defun logseq-org-roam--parse-buffer (plist parts)
@@ -684,11 +685,11 @@ that were parsed."
                     (plist-get plist :update-error))
           (logseq-org-roam--catch-fun
               'parse-error '(invalid-ast)
-            (lambda (err)
-              (princ (concat "- Error parsing " (logseq-org-roam--fl file) "\n"))
-              (puthash file
-                       (plist-put plist :parse-error err)
-                       inventory))
+              (lambda (err)
+                (princ (concat "- Error parsing " (logseq-org-roam--fl file) "\n"))
+                (puthash file
+                         (plist-put plist :parse-error err)
+                         inventory))
             (logseq-org-roam--with-temp-buffer file
               (let ((new_plist (plist-put plist :hash
                                           (logseq-org-roam--secure-hash
@@ -920,13 +921,13 @@ first."
                               mismatch-first-section
                               mismatch-link
                               hash-mismatch)
-            (lambda (err)
-              (princ (format "- Error updating %s of %s\n"
-                             (if link-p "links" "first section")
-                             (logseq-org-roam--fl file)))
-              (puthash file
-                       (plist-put plist :update-error err)
-                       inventory))
+              (lambda (err)
+                (princ (format "- Error updating %s of %s\n"
+                               (if link-p "links" "first section")
+                               (logseq-org-roam--fl file)))
+                (puthash file
+                         (plist-put plist :update-error err)
+                         inventory))
             (logseq-org-roam--with-edit-buffer file
               (unless (string= (plist-get plist :hash)
                                (logseq-org-roam--secure-hash
@@ -1028,7 +1029,6 @@ When the file is created, it is inserted an Org ID and a title,
 then saved.  There is no support for templates at the moment.
 
 Return the list of new files created."
-  ;; TODO: add more logs to explain why links are not created.
   (let (created-files)
     (princ "** Creating new files:\n")
     (dolist (file files)
@@ -1050,26 +1050,39 @@ Return the list of new files created."
                 (setq new-path (logseq-org-roam--create-path-fuzzy
                                 path fuzzy-dict))
                 (setq new-title path)))
-              (when (and new-path
-                         (logseq-org-roam--file-exists-p
-                          (directory-file-name
-                           (file-name-directory new-path)))
-                         (not (logseq-org-roam--file-exists-p new-path))
-                         (org-roam-file-p new-path)
-                         (condition-case ()
-                             (funcall logseq-org-roam-create-accept-func
-                                      new-path)
-                           (error nil)))
-                (logseq-org-roam--with-edit-buffer new-path
-                  ;; TODO: Use capture templates instead
-                  (org-id-get-create)
-                  (goto-char (point-max))
-                  (insert (concat "#+title: " new-title "\n"))
-                  (save-buffer))
-                (princ (concat "- Created " (logseq-org-roam--fl new-path)
-                               " from the " (if (eq type 'file) "file" "fuzzy")
-                               " link in " (logseq-org-roam--fl file) "\n"))
-                (push new-path created-files)))))))
+              (cond ((not new-path) t) ;; link to existing entry
+                    ((not (logseq-org-roam--file-exists-p
+                           (directory-file-name
+                            (file-name-directory new-path))))
+                     (princ (format "- For %s link %s in %s: parent directory of %s does not exists\n"
+                                    (if (eq type 'file) "file" "fuzzy")
+                                    path (logseq-org-roam--fl file) new-path)))
+                    ((logseq-org-roam--file-exists-p new-path)
+                     (princ (format "- For %s link %s in %s: file %s already exists\n"
+                                    (if (eq type 'file) "file" "fuzzy")
+                                    path (logseq-org-roam--fl file) new-path)))
+                    ((not (org-roam-file-p new-path))
+                     (princ (format "- For %s link %s in %s: %s is not an org-roam file\n"
+                                    (if (eq type 'file) "file" "fuzzy")
+                                    path (logseq-org-roam--fl file) new-path)))
+                    ((not (condition-case ()
+                              (funcall logseq-org-roam-create-accept-func
+                                       new-path)
+                            (error nil)))
+                     (princ (format "- For %s link %s in %s: creation of %s is rejected\n"
+                                    (if (eq type 'file) "file" "fuzzy")
+                                    path (logseq-org-roam--fl file) new-path)))
+                    (t
+                     (logseq-org-roam--with-edit-buffer new-path
+                       ;; TODO: Use capture templates instead
+                       (org-id-get-create)
+                       (goto-char (point-max))
+                       (insert (concat "#+title: " new-title "\n"))
+                       (save-buffer))
+                     (princ (concat "- Created " (logseq-org-roam--fl new-path)
+                                    " from the " (if (eq type 'file) "file" "fuzzy")
+                                    " link in " (logseq-org-roam--fl file) "\n"))
+                     (push new-path created-files))))))))
     (unless created-files
       (princ "No new files created\n"))
     created-files))
@@ -1259,13 +1272,13 @@ the documentation string of `logseq-org-roam-capture'."
               fuzzy-dict)
          (logseq-org-roam--catch-fun
              'stop '(error-encountered)
-           (lambda (_)
-             (display-warning 'logseq-org-roam
-                              (concat "Stopped with errors, see "
-                                      (format logseq-org-roam--log-buffer-name
-                                              org-roam-directory)
-                                      " buffer")
-                              :error))
+             (lambda (_)
+               (display-warning 'logseq-org-roam
+                                (concat "Stopped with errors, see "
+                                        (format logseq-org-roam--log-buffer-name
+                                                org-roam-directory)
+                                        " buffer")
+                                :error))
            (setq inventory (logseq-org-roam--inventory-init files))
            ;; TODO calculate files that can be updated (all - cache - external)
            (if (= 0 (logseq-org-roam--inventory-all
