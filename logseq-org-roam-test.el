@@ -405,7 +405,8 @@ A [[test links]] matching headline.
                     (title 288 298 "Logseq" nil "[[Logseq]]" "B")))
            (result (buffer-string)) ;; unchanged
            (expected 'mismatch-link)
-           (actual (logseq-org-roam--update-links links nil nil)))
+           (actual (catch 'update-error
+                     (logseq-org-roam--update-links links nil nil))))
       (should (equal result (buffer-string)))
       (should (eq actual expected)))))
 
@@ -680,9 +681,9 @@ A [[test links]] matching headline.
      (should (equal actual expected))
      (should (equal (gethash "a" inventory) '(:hash "hash")))
      (should (equal (gethash "h" inventory) '(:hash "hash")))
-     (should (equal (gethash "i" inventory) '(:hash "wrong hash" :update-error 'hash-mismatch)))
+     (should (equal (gethash "i" inventory) '(:hash "wrong hash" :update-error hash-mismatch)))
      (should (equal logs
-                    "** First sections of the following files are updated:\n- Updated [[file:h][h]]\n")))))
+                    "** Updating files:\n- Updated first section of [[file:h][h]]\n- Error updating first section of [[file:i][i]]\n")))))
 
 (ert-deftest logseq-org-roam--update-all--links ()
   (mocker-let
@@ -723,28 +724,19 @@ A [[test links]] matching headline.
           (org-roam-directory default-directory)
           (inventory (make-hash-table-from
                       '(("a" . (:hash "hash" :links '("foo")))
-                        ("b" . (:modified-p t))
-                        ("c" . (:external-p t))
-                        ("d" . (:cache-p t))
-                        ("e" . (:parse-error t))
-                        ("f" . (:update-error t))
-                        ("g" . (:title "Foo"
-                                :id "foo"
-                                :aliases '("foo")
-                                :roam-aliases '("foo")))
                         ("h" . (:hash "hash" :links '("foo"))))))
           (expected '("h")))
      (with-temp-buffer
        (let ((standard-output (current-buffer)))
          (setq actual (logseq-org-roam--update-all
-                       '("a" "b" "c" "d" "e" "f" "g" "h")
+                       '("a" "h")
                        inventory t nil))
          (setq logs (buffer-string))))
      (should (equal actual expected))
      (should (equal (gethash "a" inventory) '(:hash "hash" :links '("foo"))))
      (should (equal (gethash "h" inventory) '(:hash "hash" :links '("foo"))))
      (should (equal logs
-                    "** Links of the following files are updated:\n- Updated [[file:h][h]]\n")))))
+                    "** Updating files:\n- Updated links of [[file:h][h]]\n")))))
 
 (ert-deftest logseq-org-roam-create-translate-default--normal ()
   (mocker-let

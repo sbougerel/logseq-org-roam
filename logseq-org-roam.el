@@ -373,13 +373,15 @@ previously created."
      ,@body))
 
 ;; TODO: test
-(defmacro logseq-org-roam--catch-fun (sym fun &rest body)
-  "Catch SYM during BODY's execution and pass it to FUN."
-  (declare (indent 2) (debug t))
+(defmacro logseq-org-roam--catch-fun (sym errs fun &rest body)
+  "Catch SYM ERRS during BODY's execution and pass it to FUN."
+  (declare (indent 3) (debug t))
   (let ((result (make-symbol "result")))
     `(let ((,result (catch ,sym ,@body)))
-       (when (and ,result (symbolp ,result))
-         (,fun ,result)))))
+       (if (and ,result
+                (symbolp ,result)
+                (memq ,result ,errs))
+           (,fun ,result)))))
 
 (defun logseq-org-roam--fl (file)
   "Make an org link to FILE relative to `org-roam-directory'."
@@ -566,7 +568,7 @@ being modified in a buffer."
   (cond
    ((or (not (consp data))
         (not (eq 'org-data (car data))))
-    (throw 'fault 'invalid-ast))
+    (throw 'parse-error 'invalid-ast))
    ((or (not (cddr data))
         (not (consp (caddr data)))
         (not (eq 'section (caaddr data))))
@@ -681,11 +683,12 @@ that were parsed."
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
           (logseq-org-roam--catch-fun
-              'fault (lambda (err)
-                       (princ (concat "- Error parsing " (logseq-org-roam--fl file) "\n"))
-                       (puthash file
-                                (plist-put plist :parse-error err)
-                                inventory))
+              'parse-error '(invalid-ast)
+            (lambda (err)
+              (princ (concat "- Error parsing " (logseq-org-roam--fl file) "\n"))
+              (puthash file
+                       (plist-put plist :parse-error err)
+                       inventory))
             (logseq-org-roam--with-temp-buffer file
               (let ((new_plist (plist-put plist :hash
                                           (logseq-org-roam--secure-hash
@@ -840,7 +843,7 @@ buffer during the update."
          (goto-char (+ (or (plist-get plist :title-point) beg)
                        (- (buffer-size) start-size)
                        (if first-section-p 0 -1)))
-         (unless (bolp) (throw 'fault 'mismatch-before-title))
+         (unless (bolp) (throw 'update-error 'mismatch-before-title))
          (insert (concat "#+title: " title "\n"))))
      (when-let ((diff (seq-difference (plist-get plist :aliases)
                                       (plist-get plist :roam-aliases))))
@@ -849,7 +852,7 @@ buffer during the update."
          (org-roam-property-add "ROAM_ALIASES" alias)))
      (unless first-section-p
        (goto-char (+ beg (- (buffer-size) start-size) -1))
-       (unless (looking-at "\n") (throw 'fault 'mismatch-first-section))
+       (unless (looking-at "\n") (throw 'update-error 'mismatch-first-section))
        (delete-char 1)))))
 
 (defun logseq-org-roam--update-links (links inventory fuzzy-dict)
@@ -860,33 +863,32 @@ updating the buffer.
 The argument FUZZY-DICT is a hash-table needed to map a fuzzy
 link target to a key in inventory (a file path).  When dealing
 only with file links, this hashtable is not used."
-  (catch 'fault
-    ;; Even hash has a small chance of collision
-    (pcase-dolist (`(_ ,beg ,end _ _ ,raw) links)
-      (unless (string= (buffer-substring-no-properties beg end) raw)
-        (throw 'fault 'mismatch-link)))
-    ;; Avoid offset calculations with buffer updates
-    (sort links (lambda (a b) (> (nth 1 a) (nth 1 b))))
-    (pcase-dolist (`(,type ,beg ,end ,path ,descr _) links)
-      (when-let ((id (if (eq 'file type)
-                         (plist-get (gethash (logseq-org-roam--expand-file path)
-                                             inventory)
-                                    :id)
-                       ;; title type: fuzzy-dict's key can be \\='conflict
-                       (plist-get (gethash (gethash (downcase path)
-                                                    fuzzy-dict)
+  ;; `secure-hash' has a small chance of collision
+  (pcase-dolist (`(_ ,beg ,end _ _ ,raw) links)
+    (unless (string= (buffer-substring-no-properties beg end) raw)
+      (throw 'update-error 'mismatch-link)))
+  ;; Avoid offset calculations with buffer updates
+  (sort links (lambda (a b) (> (nth 1 a) (nth 1 b))))
+  (pcase-dolist (`(,type ,beg ,end ,path ,descr _) links)
+    (when-let ((id (if (eq 'file type)
+                       (plist-get (gethash (logseq-org-roam--expand-file path)
                                            inventory)
-                                  :id))))
-        (save-excursion
-          (save-restriction
-            (narrow-to-region beg end)
-            (goto-char beg)
-            (delete-region beg end)
-            ;; TODO: log link updates
-            (if descr
-                (insert (concat "[[id:" id "][" descr "]]"))
-              (insert (concat "[[id:" id "][" path "]]")))))))
-    t))
+                                  :id)
+                     ;; title type: fuzzy-dict's key can be \\='conflict
+                     (plist-get (gethash (gethash (downcase path)
+                                                  fuzzy-dict)
+                                         inventory)
+                                :id))))
+      (save-excursion
+        (save-restriction
+          (narrow-to-region beg end)
+          (goto-char beg)
+          (delete-region beg end)
+          ;; TODO: log link updates
+          (if descr
+              (insert (concat "[[id:" id "][" descr "]]"))
+            (insert (concat "[[id:" id "][" path "]]")))))))
+  t)
 
 (defun logseq-org-roam--update-all (files inventory &optional link-p fuzzy-dict)
   "Update all FILES according to INVENTORY.
@@ -914,18 +916,22 @@ first."
                            (not (seq-difference (plist-get plist :aliases)
                                                 (plist-get plist :roam-aliases))))))
           (logseq-org-roam--catch-fun
-              'fault (lambda (err)
-                       (princ (format "- Error updating %s of %s\n"
-                                      (if link-p "first section" "links")
-                                      (logseq-org-roam--fl file)))
-                       (puthash file
-                                (plist-put plist :update-error err)
-                                inventory))
+              'update-error '(mismatch-before-title
+                              mismatch-first-section
+                              mismatch-link
+                              hash-mismatch)
+            (lambda (err)
+              (princ (format "- Error updating %s of %s\n"
+                             (if link-p "links" "first section")
+                             (logseq-org-roam--fl file)))
+              (puthash file
+                       (plist-put plist :update-error err)
+                       inventory))
             (logseq-org-roam--with-edit-buffer file
               (unless (string= (plist-get plist :hash)
                                (logseq-org-roam--secure-hash
                                 'sha256 (current-buffer)))
-                (throw 'fault 'hash-mismatch))
+                (throw 'update-error 'hash-mismatch))
               (if link-p
                   (logseq-org-roam--update-links (plist-get plist :links)
                                                  inventory fuzzy-dict)
@@ -933,7 +939,7 @@ first."
               (when (buffer-modified-p)
                 (save-buffer)  ;; NOTE: runs org-roam hook and formatters
                 (push file updated-files)
-                (princ (concat "- Updated " (if link-p "first section" "links")
+                (princ (concat "- Updated " (if link-p "links" "first section")
                                " of " (logseq-org-roam--fl file) "\n"))
                 (setq log-p t)))))))
     (unless log-p
@@ -1251,14 +1257,15 @@ the documentation string of `logseq-org-roam-capture'."
               created-files
               not-created-files
               fuzzy-dict)
-         (logseq-org-roam--catch-fun 'stop
-             (lambda (_)
-               (display-warning 'logseq-org-roam
-                                (concat "Stopped with errors, see "
-                                        (format logseq-org-roam--log-buffer-name
-                                                org-roam-directory)
-                                        " buffer")
-                                :error))
+         (logseq-org-roam--catch-fun
+             'stop '(error-encountered)
+           (lambda (_)
+             (display-warning 'logseq-org-roam
+                              (concat "Stopped with errors, see "
+                                      (format logseq-org-roam--log-buffer-name
+                                              org-roam-directory)
+                                      " buffer")
+                              :error))
            (setq inventory (logseq-org-roam--inventory-init files))
            ;; TODO calculate files that can be updated (all - cache - external)
            (if (= 0 (logseq-org-roam--inventory-all
