@@ -325,8 +325,6 @@ in `logseq-org-roam-create-translate-default'."
              (setq buffer-read-only nil)
              (setq buffer-file-name nil)
              (setq buffer-undo-list t) ;; disable undo
-             ;; (setq inhibit-read-only t) ;; TODO: not buffer local; relocate & unwind-protect
-             ;; (setq inhibit-modification-hooks t)  ;; TODO: not buffer local; relocate & unwind-protect
              (goto-char (point-max))
              (if (/= (point-min) (point-max))
                  (insert "\n\n"))
@@ -335,7 +333,6 @@ in `logseq-org-roam-create-translate-default'."
        (with-current-buffer standard-output
          (goto-char (point-max))
          (insert "You can set this buffer to `org-mode' to navigate links\n")
-         ;; (setq inhibit-read-only nil)
          (setq buffer-read-only t)))))
 
 (defmacro logseq-org-roam--with-edit-buffer (file &rest body)
@@ -345,8 +342,12 @@ macro does not save the file, but will *always* kill the buffer
 if it was previously created."
   (declare (indent 1) (debug t))
   (let ((exist-buf (make-symbol "exist-buf"))
-        (buf (make-symbol "buf")))
-    `(let* ((,exist-buf (logseq-org-roam--find-buffer-visiting ,file))
+        (buf (make-symbol "buf"))
+        (bimf (make-symbol "bimf"))
+        (biro (make-symbol "biro")))
+    `(let* ((,bimf inhibit-modification-hooks)
+            (,biro inhibit-read-only)
+            (,exist-buf (logseq-org-roam--find-buffer-visiting ,file))
             (,buf
              (or ,exist-buf
                  (let ((auto-mode-alist nil)
@@ -354,9 +355,13 @@ if it was previously created."
                    (logseq-org-roam--find-file-noselect ,file)))))
        (unwind-protect
            (with-current-buffer ,buf
+             (setq inhibit-read-only t)
+             (setq inhibit-modification-hooks (if ,exist-buf t ,bimf))
              (unless (derived-mode-p 'org-mode)
                (let ((org-inhibit-startup t)) (org-mode)))
              ,@body)
+         (setq inhibit-modification-hooks ,bimf)
+         (setq inhibit-read-only ,biro)
          (unless ,exist-buf (kill-buffer ,buf))))))
 
 (defmacro logseq-org-roam--with-temp-buffer (file &rest body)
@@ -593,6 +598,7 @@ being modified in a buffer."
             (let* ((path (org-element-property :path link))
                    (true-path (logseq-org-roam--expand-file path)))
               ;; Convert only links that point to org-roam files
+              ;; TODO: store expanded file links (instead of relative)
               (if (org-roam-file-p true-path)
                   (let* ((descr (buffer-substring-no-properties
                                  (org-element-property :contents-begin link)
