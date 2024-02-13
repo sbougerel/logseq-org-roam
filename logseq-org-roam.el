@@ -424,9 +424,9 @@ previously created."
         type)
     (catch 'found
       (dolist (elem image-type-file-name-regexps)
-	(when (and (string-match-p (car elem) file)
-                   (image-type-available-p (setq type (cdr elem))))
-	  (throw 'found type))))))
+	(if (and (string-match-p (car elem) file)
+                 (image-type-available-p (setq type (cdr elem))))
+	    (throw 'found type))))))
 
 (defun logseq-org-roam--value-string-p (element)
   "Return non-nil if ELEMENT has a string value that is not empty."
@@ -667,14 +667,14 @@ of keywords which defaults to \\='(first-section file-links
 fuzzy-links)."
   (org-with-wide-buffer
    (let* ((data (org-element-parse-buffer)))
-     (when (memq 'first-section parts)
-       (setq plist (logseq-org-roam--parse-first-section data plist)))
+     (if (memq 'first-section parts)
+         (setq plist (logseq-org-roam--parse-first-section data plist)))
      ;; links are never updated for external files
      (unless (plist-get plist :external-p)
-       (when (memq 'file-links parts)
-         (setq plist (logseq-org-roam--parse-file-links data plist)))
-       (when (memq 'fuzzy-links parts)
-         (setq plist (logseq-org-roam--parse-fuzzy-links data plist))))))
+       (if (memq 'file-links parts)
+           (setq plist (logseq-org-roam--parse-file-links data plist)))
+       (if (memq 'fuzzy-links parts)
+           (setq plist (logseq-org-roam--parse-fuzzy-links data plist))))))
   plist)
 
 (defun logseq-org-roam--parse-files (files inventory parts)
@@ -771,7 +771,6 @@ other, there is no unique target for titled links to these files.
 
 Return a map of fuzzy links of INVENTORY keys or nil if conflicts
 were found."
-  ;; TODO: refactor without `conflicts', can?
   (princ "** Building dictionary of titles and aliases:\n")
   (let ((dict (make-hash-table :test #'equal))
         (conflicts (make-hash-table :test #'equal))
@@ -781,8 +780,7 @@ were found."
         (unless (or (plist-get plist :modified-p)
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
-          ;; NOTE: Titles should not be empty here
-          ;; Aliases and title from the same file don't conflict
+          ;; NOTE: Similar title and aliases from the same file are not marked as conflict
           (let ((merged (seq-uniq
                          (append
                           (list (downcase (plist-get plist :title)))
@@ -989,13 +987,12 @@ link path are also replaced, see:
 (defun logseq-org-roam--create-path-fuzzy (fuzzy fuzzy-dict)
   "Return a path from FUZZY link.
 Uses FUZZY-DICT to ensure this is a brand new entry."
-  (when
-      (eq 'not-found (gethash (downcase fuzzy) fuzzy-dict 'not-found))
-    (let ((translated
-           (condition-case ()
-               (funcall logseq-org-roam-create-translate-func fuzzy)
-             (error nil))))
-      (if (file-name-absolute-p translated) translated))))
+  (if (eq 'not-found (gethash (downcase fuzzy) fuzzy-dict 'not-found))
+      (let ((translated
+             (condition-case ()
+                 (funcall logseq-org-roam-create-translate-func fuzzy)
+               (error nil))))
+        (if (file-name-absolute-p translated) translated))))
 
 (defun logseq-org-roam--create-path-file (path file inventory)
   "Return a path from the PATH in a FILE link.
@@ -1286,7 +1283,6 @@ the documentation string of `logseq-org-roam-capture'."
                                         " buffer")
                                 :error))
            (setq inventory (logseq-org-roam--inventory-init files))
-           ;; TODO calculate files that can be updated (all - cache - external)
            (if (= 0 (logseq-org-roam--inventory-all
                      files inventory force_flag (append '(first-section) link-parts)))
                (progn
@@ -1296,13 +1292,13 @@ the documentation string of `logseq-org-roam-capture'."
                  (logseq-org-roam--check-errors files inventory))
              (setq modified-files
                    (logseq-org-roam--update-all files inventory))
-             (when modified-files
-               (logseq-org-roam--inventory-update modified-files inventory
-                                                  (append '(first-section)
-                                                          link-parts)))
-             (when (memq 'fuzzy-links link-parts)
-               (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
-                                 files inventory)))
+             (if modified-files
+                 (logseq-org-roam--inventory-update modified-files inventory
+                                                    (append '(first-section)
+                                                            link-parts)))
+             (if (memq 'fuzzy-links link-parts)
+                 (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
+                                   files inventory)))
              ;; Do as much work as possible, but beyond this point, the errors
              ;; (modified files, parse or update errors) could affect accuracy
              ;; of the changes
@@ -1310,18 +1306,16 @@ the documentation string of `logseq-org-roam-capture'."
              (setq not-created-files files)
              (when create_flag
                (setq created-files
-                     ;; BUG: file links seems to not be created
                      (logseq-org-roam--create-from files inventory
                                                    fuzzy-dict))
                (logseq-org-roam--inventory-update created-files inventory
                                                   ;; No links added to new files
                                                   '(first-section))
                (logseq-org-roam--check-errors created-files inventory))
-             ;; BUG: after creation, links are not updated
-             (when (and (logseq-org-roam--update-all not-created-files
-                                                     inventory 'links fuzzy-dict)
-                        modified-files)
-               (run-hooks 'logseq-org-roam-updated-hook)))
+             (if (and (logseq-org-roam--update-all not-created-files
+                                                   inventory 'links fuzzy-dict)
+                      modified-files)
+                 (run-hooks 'logseq-org-roam-updated-hook)))
            ;; TODO: Add summary of results
            ;; TODO: timing should be `unwind-protect'
            (setq elapsed (float-time (time-subtract (current-time) start)))
