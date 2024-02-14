@@ -814,6 +814,46 @@ were found."
     (princ (format "%s conflicts\n" conflict-count))
     dict))
 
+(defun logseq-org-roam--normalize-path (path)
+  "Return a new PATH that is normalized.
+The file base portion of path will be downcased, and lowbar
+repetitions will be removed.  This helps with mapping
+\"triple-lowbar\" setting in Logseq to file slug created by
+`org-roam'."
+  (let ((dir (file-name-directory path))
+        (ext (file-name-extension path))
+        (base (file-name-base path)))
+    (concat dir
+            (replace-regexp-in-string "_+" "_" (downcase base))
+            "." ext)))
+
+;; TODO: test
+(defun logseq-org-roam--fill-file-dict (file-dict files)
+  "Fill FILE-DICT with the normalized path of each FILES.
+Maps each normalized path to the original path or to a cons with
+original path.  If the mapping is to a cons, it means a conflict
+was found and the cons' car contains the first path to this
+entry."
+  (princ "** Filling dictionary of similar paths:\n")
+  (let ((conflict-count 0))
+    (dolist (file files)
+      (let ((normalized (logseq-org-roam--normalize-path file)))
+        (if (eq 'not-found (gethash normalized file-dict 'not-found))
+            (puthash normalized file file-dict)
+          (setq conflict-count (1+ conflict-count))
+          (let ((val (gethash normalized file-dict))
+                original)
+            (if (consp val)
+                (setq original (car val))
+              (puthash normalized (cons val nil) file-dict)
+              (setq original val))
+            (princ (format "- Path to %s and %s are too similar and will not be converted\n"
+                           (logseq-org-roam--fl file)
+                           (logseq-org-roam--fl original)))))))
+    (princ (format "%s entries in total\n" (hash-table-count file-dict)))
+    (princ (format "%s conflicts\n" conflict-count))
+    conflict-count))
+
 (defun logseq-org-roam--buffer-title ()
   "Return a title based on current buffer's file name.
 If the file is a journal entry, format the title accroding to
@@ -1272,7 +1312,8 @@ the documentation string of `logseq-org-roam-capture'."
               modified-files
               created-files
               not-created-files
-              fuzzy-dict)
+              fuzzy-dict
+              file-dict)
          (logseq-org-roam--catch-fun
              'stop '(error-encountered)
              (lambda (_)
@@ -1299,6 +1340,9 @@ the documentation string of `logseq-org-roam-capture'."
              (if (memq 'fuzzy-links link-parts)
                  (setq fuzzy-dict (logseq-org-roam--calculate-fuzzy-dict
                                    files inventory)))
+             (when (memq 'file-links link-parts)
+               (setq file-dict (make-hash-table :test #'equal))
+               (logseq-org-roam--fill-file-dict file-dict files))
              ;; Do as much work as possible, but beyond this point, the errors
              ;; (modified files, parse or update errors) could affect accuracy
              ;; of the changes
@@ -1311,6 +1355,7 @@ the documentation string of `logseq-org-roam-capture'."
                (logseq-org-roam--inventory-update created-files inventory
                                                   ;; No links added to new files
                                                   '(first-section))
+               ;; TODO: update fuzzy-dict and path-dict here!
                (logseq-org-roam--check-errors created-files inventory))
              (if (and (logseq-org-roam--update-all not-created-files
                                                    inventory 'links fuzzy-dict)

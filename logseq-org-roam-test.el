@@ -302,6 +302,33 @@ A [[test links]] matching headline.
 3 conflicts
 "))))))
 
+(ert-deftest logseq-org-roam--fill-path-dict--with-conflict ()
+  (let ((file-dict (make-hash-table :test #'equal))
+        (org-roam-directory default-directory)
+        (files '("/Path/X.org"
+                 "/Path/y_.org"
+                 "/Path/y___.org"
+                 "/Path/z.org"
+                 "/Path/Z.org")))
+    (with-temp-buffer
+      (let* ((standard-output (current-buffer))
+             (actual (logseq-org-roam--fill-file-dict
+                      file-dict
+                      files)))
+        (should (= actual 2))
+        (should (equal (hash-table-count file-dict) 3))
+        (should (equal (gethash "/Path/x.org" file-dict) "/Path/X.org"))
+        (should (equal (gethash "/Path/y_.org" file-dict) '("/Path/y_.org")))
+        (should (equal (gethash "/Path/z.org" file-dict) '("/Path/z.org")))
+        (should (equal (buffer-string)
+                       "** Filling dictionary of similar paths:
+- Path to [[file:/Path/y_.org][y_.org]] and [[file:/Path/y___.org][y___.org]] are too similar and will not be converted
+- Path to [[file:/Path/z.org][z.org]] and [[file:/Path/Z.org][Z.org]] are too similar and will not be converted
+3 entries in total
+2 conflicts
+"))))))
+
+
 (ert-deftest logseq-org-roam--update-links ()
   (with-temp-buffer
     (insert ":PROPERTIES:
