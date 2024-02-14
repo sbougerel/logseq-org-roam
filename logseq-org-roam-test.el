@@ -309,24 +309,33 @@ A [[test links]] matching headline.
                  "/Path/y_.org"
                  "/Path/y___.org"
                  "/Path/z.org"
-                 "/Path/Z.org")))
-    (with-temp-buffer
-      (let* ((standard-output (current-buffer))
-             (actual (logseq-org-roam--fill-file-dict
-                      file-dict
-                      files)))
-        (should (= actual 2))
-        (should (equal (hash-table-count file-dict) 3))
-        (should (equal (gethash "/Path/x.org" file-dict) "/Path/X.org"))
-        (should (equal (gethash "/Path/y_.org" file-dict) '("/Path/y_.org")))
-        (should (equal (gethash "/Path/z.org" file-dict) '("/Path/z.org")))
-        (should (equal (buffer-string)
-                       "** Filling dictionary of similar paths:
-- Path to [[file:/Path/y_.org][y_.org]] and [[file:/Path/y___.org][y___.org]] are too similar and will not be converted
-- Path to [[file:/Path/z.org][z.org]] and [[file:/Path/Z.org][Z.org]] are too similar and will not be converted
+                 "/Path/Z.org"))
+        actual
+        log)
+    (mocker-let ((logseq-org-roam--fl (p)
+                                      :ordered nil
+                                      ((:input '("/Path/y_.org") :output "[[y_.org]]")
+                                       (:input '("/Path/y___.org") :output "[[y___.org]]")
+                                       (:input '("/Path/z.org") :output "[[z.org]]")
+                                       (:input '("/Path/Z.org") :output "[[Z.org]]"))))
+                (with-temp-buffer
+                  (let* ((standard-output (current-buffer)))
+                    (setq actual (logseq-org-roam--fill-file-dict
+                                  file-dict
+                                  files)))
+                  (setq log (buffer-string))))
+    (should (= actual 2))
+    (should (equal (hash-table-count file-dict) 3))
+    (should (equal (gethash "/Path/x.org" file-dict) "/Path/X.org"))
+    (should (equal (gethash "/Path/y_.org" file-dict) '("/Path/y_.org")))
+    (should (equal (gethash "/Path/z.org" file-dict) '("/Path/z.org")))
+    (should (equal log
+                   "** Filling dictionary of similar paths:
+- Path to [[y___.org]] and [[y_.org]] are too similar and will not be converted
+- Path to [[Z.org]] and [[z.org]] are too similar and will not be converted
 3 entries in total
 2 conflicts
-"))))))
+"))))
 
 
 (ert-deftest logseq-org-roam--update-links ()
