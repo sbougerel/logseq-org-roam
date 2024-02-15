@@ -151,37 +151,39 @@
       (should (equal actual expected)))))
 
 (ert-deftest logseq-org-roam--parse-buffer--heading-id ()
-  (with-temp-buffer
-    (insert "* Typical Logseq page
+  (let (actual
+        (expected nil))
+    (with-temp-buffer
+      (insert "* Typical Logseq page
 :PROPERTIES:
 :ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 *")
-    (org-mode)
-    (let ((actual (logseq-org-roam--parse-buffer
-                   nil '(first-section file-links fuzzy-links)))
-          (expected nil))
-      (should (equal actual expected)))))
+      (org-mode)
+      (setq actual (logseq-org-roam--parse-buffer
+                    nil '(first-section file-links fuzzy-links))))
+    (should (equal actual expected))))
 
 (ert-deftest logseq-org-roam--parse-buffer--aliases ()
-  (with-temp-buffer
-    (insert ":PROPERTIES:
+  (let (actual
+        (expected '(:first-section-p t
+                    :title-point 88
+                    :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
+                    :roam-aliases ("a" "C d")
+                    :title "Note"
+                    :aliases ("a" "B" "c d" "e"))))
+    (with-temp-buffer
+      (insert ":PROPERTIES:
 :ID:   9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :ROAM_ALIASES:  a \"C d\"
 :END:
 #+title: Note
 #+alias: a, B, c d, e
 *")
-    (org-mode)
-    (let ((actual (logseq-org-roam--parse-buffer
-                   nil '(first-section file-links fuzzy-links)))
-          (expected '(:first-section-p t
-                      :title-point 88
-                      :id "9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f"
-                      :roam-aliases ("a" "c d")
-                      :title "Note"
-                      :aliases ("a" "b" "c d" "e"))))
-      (should (equal actual expected)))))
+      (org-mode)
+      (setq actual (logseq-org-roam--parse-buffer
+                    nil '(first-section file-links fuzzy-links))))
+    (should (equal actual expected))))
 
 (ert-deftest logseq-org-roam--parse-buffer--links ()
   (with-temp-buffer
@@ -310,7 +312,7 @@ A [[test links]] matching headline.
 3 conflicts
 "))))
 
-(ert-deftest logseq-org-roam--fill-path-dict--with-conflict ()
+(ert-deftest logseq-org-roam--fill-file-dict--with-conflict ()
   (let ((file-dict (make-hash-table :test #'equal))
         (org-roam-directory default-directory)
         (files '("/Path/X.org"
@@ -344,7 +346,6 @@ A [[test links]] matching headline.
 3 entries in total
 2 conflicts
 "))))
-
 
 (ert-deftest logseq-org-roam--update-links ()
   (let ((org-roam-directory default-directory)
@@ -381,7 +382,7 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
         (expected t)
-        actual)
+        actual logs)
     (with-temp-buffer
       (insert ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
@@ -410,11 +411,12 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
       (org-mode)
-      (mocker-let
-       ((logseq-org-roam--expand-file (p)
-                                      ((:input '("dir/note.org") :output "dir/note.org"))))
-       (setq actual (logseq-org-roam--update-links links inventory file-dict fuzzy-dict))))
-    (should (equal result (buffer-string)))
+      (mocker-let ((logseq-org-roam--expand-file
+                    (p)
+                    ((:input '("dir/note.org") :output "dir/note.org"))))
+                  (setq actual (logseq-org-roam--update-links links inventory file-dict fuzzy-dict)))
+      (setq logs (buffer-string)))
+    (should (equal result logs))
     (should (eq actual expected))))
 
 (ert-deftest logseq-org-roam--update-links--faulty ()
@@ -552,55 +554,64 @@ A [[test links]] matching headline.
          (files '("a" "b" "c"))
          (inventory (logseq-org-roam--inventory-init files))
          logs actual)
-    (mocker-let
-     ((logseq-org-roam--fl
-       (f)
-       ((:input-matcher (lambda (f) (stringp f))
-         :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
-      (logseq-org-roam-logseq-p
-       (f)
-       ((:input '("a") :output t)
-        (:input '("b") :output t)
-        (:input '("c") :output t)))
-      (logseq-org-roam--insert-file-contents
-       (f &optional v b e r)
-       ((:input '("a" nil nil nil nil)
-         :output-generator (lambda (f &optional v b e r)
-                             (insert "* Typical Logseq page
+    (with-temp-buffer
+      (let ((standard-output (current-buffer)))
+        (mocker-let
+         ((logseq-org-roam--fl
+           (f)
+           ((:occur 3
+             :input-matcher (lambda (f) (stringp f))
+             :output-generator (lambda (f) (format "[[%s]]" f f)))))
+          (logseq-org-roam--secure-hash
+           (a o &optional s e b)
+           ((:occur 3
+             :input-matcher (lambda (a o &optional s e b)
+                              (and (eq a 'sha256)
+                                   (bufferp o)
+                                   (not s) (not e) (not b)))
+             :output "hash")))
+          (logseq-org-roam-logseq-p
+           (f)
+           ((:input '("a") :output t)
+            (:input '("b") :output t)
+            (:input '("c") :output t)))
+          (logseq-org-roam--insert-file-contents
+           (f &optional v b e r)
+           ((:input '("a" nil nil nil nil)
+             :output-generator (lambda (f &optional v b e r)
+                                 (insert "* Typical Logseq page
 *")))
-        (:input '("b" nil nil nil nil)
-         :output-generator (lambda (f &optional v b e r)
-                             (insert "#+alias: d
+            (:input '("b" nil nil nil nil)
+             :output-generator (lambda (f &optional v b e r)
+                                 (insert "#+alias: d
 * Logseq page with alias
 *")))
-        (:input '("c" nil nil nil nil)
-         :output-generator (lambda (f &optional v b e r)
-                             (insert "#+title: Test note
+            (:input '("c" nil nil nil nil)
+             :output-generator (lambda (f &optional v b e r)
+                                 (insert "#+title: Test note
 * Logseq page with title
 *"))))))
-     (with-temp-buffer
-       (let ((standard-output (current-buffer)))
          (setq actual
                (logseq-org-roam--inventory-all
-                files inventory t '(first-section file-links fuzzy-links))))
-       (setq logs (buffer-string))))
+                files inventory t '(first-section file-links fuzzy-links)))))
+      (setq logs (buffer-string)))
     (should (equal actual 3))
     (should (equal (gethash "a" inventory 'not-found)
-                   '(:hash "0402a679d81d52814c2f30094d1bcbf8aeb2da2c7b98a0624267585405219b76")))
+                   '(:hash "hash")))
     (should (equal (gethash "b" inventory 'not-found)
-                   '(:hash "651d9ddca6e5f8cfce534d1f4ae7f8cbb85a2dd1a6b942d0723f6a451cf67799"
+                   '(:hash "hash"
                      :first-section-p t
                      :aliases ("d"))))
     (should (equal (gethash "c" inventory 'not-found)
-                   '(:hash "b16e53419b3e9c1fabf6bdfa6476d4ab523e25b9e7ea14fa4a6a9c9ce3d3a8bc"
+                   '(:hash "hash"
                      :first-section-p t
                      :title-point 1
                      :title "Test note")))
     (should (equal logs
                    "** Initial inventory:
-- Parsed [[file:a][a]]
-- Parsed [[file:b][b]]
-- Parsed [[file:c][c]]
+- Parsed [[a]]
+- Parsed [[b]]
+- Parsed [[c]]
 3 files found in org-roam directory
 0 files being visited in a modified buffer will be skipped
 0 files are external to Logseq and will not be modified
@@ -608,207 +619,223 @@ A [[test links]] matching headline.
 "))))
 
 (ert-deftest logseq-org-roam--inventory-update--no-change ()
-  (mocker-let
-   ((logseq-org-roam--fl
-     (f)
-     ((:input-matcher (lambda (f) (stringp f))
-       :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
-    (logseq-org-roam-logseq-p
-     (f)
-     ((:input '("a") :output t)
-      (:input '("b") :output t)
-      (:input '("c") :output t)))
-    (logseq-org-roam--insert-file-contents
-     (f &optional v b e r)
-     :ordered nil
-     ((:input '("a" nil nil nil nil)
-       :occur 2
-       :output-generator (lambda (f &optional v b e r)
-                           (insert "* Typical Logseq page
+  (let ((org-roam-directory default-directory)
+        (expected-logs "** Inventory update:
+- Parsed [[a]]
+- Parsed [[b]]
+- Parsed [[c]]
+3 files have been parsed")
+        (files '("a" "b" "c"))
+        (inventory (make-hash-table-from '(("a" . (:hash "hash"))
+                                           ("b" . (:hash "hash"
+                                                   :first-section-p t
+                                                   :aliases ("d")))
+                                           ("c" . (:hash "hash"
+                                                   :first-section-p t
+                                                   :title-point 1
+                                                   :title "Test note")))))
+        logs)
+    (with-temp-buffer
+      (let ((standard-output (current-buffer)))
+        (mocker-let
+         ((logseq-org-roam--fl
+           (f)
+           ((:input-matcher (lambda (f) (stringp f))
+             :output-generator (lambda (f) (format "[[%s]]" f f)))))
+          (logseq-org-roam--secure-hash
+           (a o &optional s e b)
+           ((:occur 3
+             :input-matcher (lambda (a o &optional s e b)
+                              (and (eq a 'sha256)
+                                   (bufferp o)
+                                   (not s) (not e) (not b)))
+             :output "hash")))
+          (logseq-org-roam--insert-file-contents
+           (f &optional v b e r)
+           :ordered nil
+           ((:input '("a" nil nil nil nil)
+             :output-generator (lambda (f &optional v b e r)
+                                 (insert "* Typical Logseq page
 *")))
-      (:input '("b" nil nil nil nil)
-       :occur 2
-       :output-generator (lambda (f &optional v b e r)
-                           (insert "#+alias: d
+            (:input '("b" nil nil nil nil)
+             :output-generator (lambda (f &optional v b e r)
+                                 (insert "#+alias: d
 * Logseq page with alias
 *")))
-      (:input '("c" nil nil nil nil)
-       :occur 2
-       :output-generator (lambda (f &optional v b e r)
-                           (insert "#+title: Test note
+            (:input '("c" nil nil nil nil)
+             :output-generator (lambda (f &optional v b e r)
+                                 (insert "#+title: Test note
 * Logseq page with title
 *"))))))
-   (let* ((org-roam-directory default-directory)
-          (expected-logs "** Inventory update:
-- Parsed [[file:a][a]]
-- Parsed [[file:b][b]]
-- Parsed [[file:c][c]]
-3 files have been parsed")
-          (files '("a" "b" "c"))
-          (inventory (logseq-org-roam--inventory-init files))
-          logs)
-     (with-temp-buffer
-       (let ((standard-output (current-buffer)))
-         (logseq-org-roam--inventory-all
-          files inventory t '(first-section file-links fuzzy-links))))
-     (with-temp-buffer
-       (let ((standard-output (current-buffer)))
          (logseq-org-roam--inventory-update
-          files inventory '(first-section file-links fuzzy-links)))
-       (setq logs (buffer-string)))
-     (should (hash-table-p inventory))
-     (should (equal (hash-table-count inventory) 3))
-     (should (equal (gethash "a" inventory 'not-found)
-                    '(:hash "0402a679d81d52814c2f30094d1bcbf8aeb2da2c7b98a0624267585405219b76")))
-     (should (equal (gethash "b" inventory 'not-found)
-                    '(:hash "651d9ddca6e5f8cfce534d1f4ae7f8cbb85a2dd1a6b942d0723f6a451cf67799"
-                      :first-section-p t
-                      :aliases ("d"))))
-     (should (equal (gethash "c" inventory 'not-found)
-                    '(:hash "b16e53419b3e9c1fabf6bdfa6476d4ab523e25b9e7ea14fa4a6a9c9ce3d3a8bc"
-                      :first-section-p t
-                      :title-point 1
-                      :title "Test note")))
-     (should (equal (substring logs 0 (length expected-logs))
-                    expected-logs)))))
+          files inventory '(first-section file-links fuzzy-links))))
+      (setq logs (buffer-string)))
+    (should (equal (hash-table-count inventory) 3))
+    (should (equal (gethash "a" inventory 'not-found)
+                   '(:hash "hash")))
+    (should (equal (gethash "b" inventory 'not-found)
+                   '(:hash "hash"
+                     :first-section-p t
+                     :aliases ("d"))))
+    (should (equal (gethash "c" inventory 'not-found)
+                   '(:hash "hash"
+                     :first-section-p t
+                     :title-point 1
+                     :title "Test note")))
+    (should (equal (substring logs 0 (length expected-logs))
+                   expected-logs))))
 
 (ert-deftest logseq-org-roam--update-all--first-sections ()
-  (mocker-let
-   ((logseq-org-roam--update-first-section
-     (p)
-     ((:occur 2 :input-matcher #'always :output-generator #'ignore)))
-    (logseq-org-roam--find-buffer-visiting
-     (f &optional p)
-     ((:occur 3 :input-matcher #'always :output nil)))
-    (logseq-org-roam--secure-hash
-     (algo obj &optional s e b)
-     ((:occur 3
-       :input-matcher #'always :output "hash")))
-    (logseq-org-roam--find-file-noselect
-     (f &optional n r w)
-     ((:input '("a" nil nil nil) ; no modifications
-       :output-generator (lambda (f &optional n r w)
-                           (get-buffer-create " *foo*" t)))
-      (:input '("h" nil nil nil) ; with modifications!
-       :output-generator (lambda (f &optional n r w)
-                           (let ((buf (get-buffer-create " *foo*" t)))
-                             (with-current-buffer buf
-                               (set-buffer-modified-p t))
-                             buf)))
-      (:input '("i" nil nil nil) ; no modifications
-       :output-generator (lambda (f &optional n r w)
-                           (get-buffer-create " *foo*" t)))))
-    (save-buffer
-     (&optional b)
-     ((:occur 1
-       :input-matcher #'always :output-generator #'ignore))))
-   (let* (logs
-          actual
-          (org-roam-directory default-directory)
-          (inventory (make-hash-table-from
-                      '(("a" . (:hash "hash"))
-                        ("b" . (:modified-p t))
-                        ("c" . (:external-p t))
-                        ("d" . (:cache-p t))
-                        ("e" . (:parse-error t))
-                        ("f" . (:update-error t))
-                        ("g" . (:title "Foo"
-                                :id "foo"
-                                :aliases '("foo")
-                                :roam-aliases '("foo")))
-                        ("h" . (:hash "hash"))
-                        ("i" . (:hash "wrong hash")))))
-          (expected '("h")))
-     (with-temp-buffer
-       (let ((standard-output (current-buffer)))
+  (let (logs
+        actual
+        (org-roam-directory default-directory)
+        (inventory (make-hash-table-from
+                    '(("a" . (:hash "hash"))
+                      ("b" . (:modified-p t))
+                      ("c" . (:external-p t))
+                      ("d" . (:cache-p t))
+                      ("e" . (:parse-error t))
+                      ("f" . (:update-error t))
+                      ("g" . (:title "Foo"
+                              :id "foo"
+                              :aliases '("foo")
+                              :roam-aliases '("foo")))
+                      ("h" . (:hash "hash"))
+                      ("i" . (:hash "wrong hash")))))
+        (expected '("h")))
+    (with-temp-buffer
+      (let ((standard-output (current-buffer)))
+        (mocker-let
+         ((logseq-org-roam--update-first-section
+           (p)
+           ((:occur 2 :input-matcher #'always :output-generator #'ignore)))
+          (logseq-org-roam--find-buffer-visiting
+           (f &optional p)
+           ((:occur 3 :input-matcher #'always :output nil)))
+          (logseq-org-roam--secure-hash
+           (a o &optional s e b)
+           ((:occur 3
+             :input-matcher (lambda (a o &optional s e b)
+                              (and (eq a 'sha256)
+                                   (bufferp o)
+                                   (not s) (not e) (not b)))
+             :output "hash")))
+          (logseq-org-roam--find-file-noselect
+           (f &optional n r w)
+           ((:input '("a" nil nil nil) ; no modifications
+             :output-generator (lambda (f &optional n r w)
+                                 (get-buffer-create " *foo*" t)))
+            (:input '("h" nil nil nil) ; with modifications!
+             :output-generator (lambda (f &optional n r w)
+                                 (let ((buf (get-buffer-create " *foo*" t)))
+                                   (with-current-buffer buf
+                                     (set-buffer-modified-p t))
+                                   buf)))
+            (:input '("i" nil nil nil) ; no modifications
+             :output-generator (lambda (f &optional n r w)
+                                 (get-buffer-create " *foo*" t)))))
+          (save-buffer
+           (&optional b)
+           ((:occur 1
+             :input-matcher (lambda (b) (not b)) :output-generator #'ignore))))
          (setq actual (logseq-org-roam--update-all
                        '("a" "b" "c" "d" "e" "f" "g" "h" "i")
-                       inventory))
-         (setq logs (buffer-string))))
-     (should (equal actual expected))
-     (should (equal (gethash "a" inventory) '(:hash "hash")))
-     (should (equal (gethash "h" inventory) '(:hash "hash")))
-     (should (equal (gethash "i" inventory) '(:hash "wrong hash" :update-error hash-mismatch)))
-     (should (equal logs
-                    "** Updating files:\n- Updated first section of [[file:h][h]]\n- Error updating first section of [[file:i][i]]\n")))))
+                       inventory))))
+      (setq logs (buffer-string)))
+    (should (equal actual expected))
+    (should (equal (gethash "a" inventory) '(:hash "hash")))
+    (should (equal (gethash "h" inventory) '(:hash "hash")))
+    (should (equal (gethash "i" inventory) '(:hash "wrong hash" :update-error hash-mismatch)))
+    (should (equal logs
+                   "** Updating files:\n- Updated first section of [[file:h][h]]\n- Error updating first section of [[file:i][i]]\n"))))
 
 (ert-deftest logseq-org-roam--update-all--links ()
-  (mocker-let
-   ((logseq-org-roam--update-links
-     (p i d)
-     ((:occur 2
-       :input-matcher (lambda (p i d)
-                        (and (consp p)
-                             (hash-table-p i)))
-       :output-generator #'ignore)))
-    (logseq-org-roam--find-buffer-visiting
-     (f &optional p)
-     ((:occur 2
-       :input-matcher (lambda (f &optional p)
-                        (stringp f))
-       :output nil)))
-    (logseq-org-roam--secure-hash
-     (algo obj &optional s e b)
-     ((:min-occur 2 :max-occur 2
-       :input-matcher #'always :output "hash")))
-    (logseq-org-roam--find-file-noselect
-     (f &optional n r w)
-     ((:input '("a" nil nil nil) ; no modifications
-       :output-generator (lambda (f &optional n r w)
-                           (get-buffer-create " *foo*" t)))
-      (:input '("h" nil nil nil) ; with modifications
-       :output-generator (lambda (f &optional n r w)
-                           (let ((buf (get-buffer-create " *foo*" t)))
-                             (with-current-buffer buf
-                               (set-buffer-modified-p t))
-                             buf)))))
-    (save-buffer
-     (&optional b)
-     ((:occur 1
-       :input-matcher #'always :output-generator #'ignore))))
-   (let* (logs
-          actual
-          (org-roam-directory default-directory)
-          (inventory (make-hash-table-from
-                      '(("a" . (:hash "hash" :links '("foo")))
-                        ("h" . (:hash "hash" :links '("foo"))))))
-          (expected '("h")))
-     (with-temp-buffer
-       (let ((standard-output (current-buffer)))
+  (let (logs
+        actual
+        (org-roam-directory default-directory)
+        (inventory (make-hash-table-from
+                    '(("a" . (:hash "hash" :links '("foo")))
+                      ("h" . (:hash "hash" :links '("foo"))))))
+        (expected '("h")))
+    (with-temp-buffer
+      (let ((standard-output (current-buffer)))
+        (mocker-let
+         ((logseq-org-roam--fl
+           (f)
+           ((:occur 1
+             :input-matcher (lambda (f) (stringp f))
+             :output-generator (lambda (f) (format "[[%s]]" f f)))))
+          (logseq-org-roam--update-links
+           (p i d1 d2)
+           ((:occur 2
+             :input-matcher (lambda (p i d1 d2)
+                              (and (consp p)
+                                   (hash-table-p i)
+                                   (not d1) (not d2)))
+             :output-generator #'ignore)))
+          (logseq-org-roam--find-buffer-visiting
+           (f &optional p)
+           ((:occur 2
+             :input-matcher (lambda (f &optional p)
+                              (stringp f))
+             :output nil)))
+          (logseq-org-roam--secure-hash
+           (a o &optional s e b)
+           ((:occur 2
+             :input-matcher (lambda (a o &optional s e b)
+                              (and (eq a 'sha256)
+                                   (bufferp o)
+                                   (not s) (not e) (not b)))
+             :output "hash")))
+          (logseq-org-roam--find-file-noselect
+           (f &optional n r w)
+           ((:input '("a" nil nil nil) ; no modifications
+             :output-generator (lambda (f &optional n r w)
+                                 (get-buffer-create " *foo*" t)))
+            (:input '("h" nil nil nil) ; with modifications
+             :output-generator (lambda (f &optional n r w)
+                                 (let ((buf (get-buffer-create " *foo*" t)))
+                                   (with-current-buffer buf
+                                     (set-buffer-modified-p t))
+                                   buf)))))
+          (save-buffer
+           (&optional b)
+           ((:occur 1
+             :input-matcher (lambda (b) (not b)) :output-generator #'ignore))))
          (setq actual (logseq-org-roam--update-all
-                       '("a" "h")
-                       inventory t nil))
-         (setq logs (buffer-string))))
-     (should (equal actual expected))
-     (should (equal (gethash "a" inventory) '(:hash "hash" :links '("foo"))))
-     (should (equal (gethash "h" inventory) '(:hash "hash" :links '("foo"))))
-     (should (equal logs
-                    "** Updating files:\n- Updated links of [[file:h][h]]\n")))))
+                       '("a" "h") inventory t nil nil))))
+      (setq logs (buffer-string)))
+    (should (equal actual expected))
+    (should (equal (gethash "a" inventory) '(:hash "hash" :links '("foo"))))
+    (should (equal (gethash "h" inventory) '(:hash "hash" :links '("foo"))))
+    (should (equal logs
+                   "** Updating files:\n- Updated links of [[h]]\n"))))
 
 (ert-deftest logseq-org-roam-create-translate-default--normal ()
-  (mocker-let
-   ((logseq-org-roam--expand-file
-     (f &optional d)
-     ((:input-matcher #'always
-       :output-generator (lambda (f &optional d) (concat d "/" f))))))
-   (let* ((org-roam-directory "/roam")
-          (logseq-org-roam-create-replace '(("[\\/]" . "_")))
-          (logseq-org-roam-journals-directory "journals")
-          (logseq-org-roam-journals-title-format "%Y_%m_%d") ;; non-ISO date
-          (logseq-org-roam-journals-file-name-format "%Y_%m_%d")
-          (logseq-org-roam-pages-directory "pages")
-          (testdata '(("Test" . "/roam/pages/Test.org")
-                      ("Use spaces" . "/roam/pages/Use spaces.org")
-                      ("Replace/all/slash" . "/roam/pages/Replace_all_slash.org")
-                      ("Replace\\all\\backslash" . "/roam/pages/Replace_all_backslash.org")
-                      ("Not date 2024" . "/roam/pages/Not date 2024.org")
-                      ("Not date July 2024" . "/roam/pages/Not date July 2024.org")
-                      ("2023-12-01" . "/roam/pages/2023-12-01.org")
-                      ("2023_12_01" . "/roam/journals/2023_12_01.org"))))
-     (pcase-dolist (`(,input . ,expected) testdata)
-       (should (equal
-                (logseq-org-roam-create-translate-default input)
-                expected))))))
+  (let ((org-roam-directory "/roam")
+        (logseq-org-roam-create-replace '(("[\\/]" . "_")))
+        (logseq-org-roam-journals-directory "journals")
+        (logseq-org-roam-journals-title-format "%Y_%m_%d") ;; non-ISO date
+        (logseq-org-roam-journals-file-name-format "%Y_%m_%d")
+        (logseq-org-roam-pages-directory "pages")
+        (testdata '(("Test" . "/roam/pages/Test.org")
+                    ("Use spaces" . "/roam/pages/Use spaces.org")
+                    ("Replace/all/slash" . "/roam/pages/Replace_all_slash.org")
+                    ("Replace\\all\\backslash" . "/roam/pages/Replace_all_backslash.org")
+                    ("Not date 2024" . "/roam/pages/Not date 2024.org")
+                    ("Not date July 2024" . "/roam/pages/Not date July 2024.org")
+                    ("2023-12-01" . "/roam/pages/2023-12-01.org")
+                    ("2023_12_01" . "/roam/journals/2023_12_01.org")))
+        actual)
+    (pcase-dolist (`(,input . ,expected) testdata)
+      (mocker-let
+       ((logseq-org-roam--expand-file
+         (f &optional d)
+         ((:min-occur 0 :max-occur 2
+           :input-matcher (lambda (f &optional d) (and (stringp f) (stringp d)))
+           :output-generator (lambda (f &optional d) (concat d "/" f))))))
+       (setq actual (logseq-org-roam-create-translate-default input)))
+      (should (equal actual expected)))))
 
 (ert-deftest logseq-org-roam--create-from--normal ()
   (let ((org-roam-directory default-directory)
@@ -867,7 +894,7 @@ A [[test links]] matching headline.
              :output-generator #'ignore)))
           (save-buffer
            (&optional b)
-           ((:input-matcher #'always :output-generator #'ignore))))
+           ((:input-matcher (lambda (b) (not b)) :output-generator #'ignore))))
          (setq actual (logseq-org-roam--create-from
                        '("a") inventory file-dict fuzzy-dict)))
         (setq logs (buffer-string))))

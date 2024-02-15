@@ -560,8 +560,8 @@ being modified in a buffer."
                (logseq-org-roam--value-string-p keyword))
           (setq plist (plist-put plist :aliases
                                  (split-string
-                                  (org-element-property :value keyword))
-                                 "\\s-*,\\s-*")))))))
+                                  (org-element-property :value keyword)
+                                  "\\s-*,\\s-*"))))))))
   plist)
 
 (defun logseq-org-roam--parse-first-section (data plist)
@@ -768,7 +768,7 @@ Returns the number of files parsed without error."
 
 (defun logseq-org-roam--fill-fuzzy-dict (fuzzy-dict files inventory)
   "Fill titles and aliases of FILES into FUZZY-DICT.
-Map each title and alias to a key in INVENTORY or to a cons
+Map each title and alias to a key in INVENTORY or to a `cons'
 containing a key to INVENTORY when a conflict is found.
 
 Ensure that titles and aliases found across all files are unique.
@@ -833,9 +833,9 @@ repetitions will be removed.  This helps with mapping
 ;; TODO: test
 (defun logseq-org-roam--fill-file-dict (file-dict files)
   "Fill FILE-DICT with the normalized path of each FILES.
-Maps each normalized path to the original path or to a cons with
+Maps each normalized path to the original path or to a `cons' with
 original path.  If the mapping is to a cons, it means a conflict
-was found and the cons' car contains the first path to this
+was found and the `car' contains the first path to this
 entry."
   (princ "** Filling dictionary of similar paths:\n")
   (let ((conflict-count 0))
@@ -926,7 +926,8 @@ only with file links, this hashtable is not used."
                     (gethash
                      ;; file-dict and fuzzy-dict key can be `consp' (conflict)
                      (if (eq 'file type)
-                         (gethash (logseq-org-roam--normalize-path path) file-dict)
+                         (gethash (logseq-org-roam--normalize-path
+                                   (logseq-org-roam--expand-file path)) file-dict)
                        (gethash (logseq-org-roam--normalize-text path) fuzzy-dict))
                      inventory) :id)))
       (save-excursion
@@ -944,7 +945,7 @@ only with file links, this hashtable is not used."
   "Update all FILES according to INVENTORY.
 By default only the first section is updated, but if LINK-P is
 non-nil, links are updated instead taking into account
-FUZZY-DICT.
+FILE-DICT and FUZZY-DICT.
 
 First sections and links are never updated in the same pass,
 since to update the links, all first sections must be inventoried
@@ -1338,6 +1339,7 @@ the documentation string of `logseq-org-roam-capture'."
                  ;; Check errors in inventory none-the-less
                  ;; TODO: write dedicated interactive function for this
                  (logseq-org-roam--check-errors files inventory))
+             ;; Compute the subset of logseq files instead of using files
              (setq modified-files
                    (logseq-org-roam--update-all files inventory))
              (if modified-files
