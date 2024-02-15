@@ -306,11 +306,6 @@ in `logseq-org-roam-create-translate-default'."
 ;; Aliased file function that interact with file system for mocking
 ;; TODO remove superfluous aliasing, improve tests
 (defalias 'logseq-org-roam--expand-file #'expand-file-name)
-(defalias 'logseq-org-roam--insert-file-contents #'insert-file-contents)
-(defalias 'logseq-org-roam--find-file-noselect #'find-file-noselect)
-(defalias 'logseq-org-roam--find-buffer-visiting #'find-buffer-visiting)
-(defalias 'logseq-org-roam--secure-hash #'secure-hash)
-(defalias 'logseq-org-roam--file-exists-p #'file-exists-p)
 
 (defmacro logseq-org-roam--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
@@ -348,12 +343,12 @@ if it was previously created."
         (biro (make-symbol "biro")))
     `(let* ((,bimf inhibit-modification-hooks)
             (,biro inhibit-read-only)
-            (,exist-buf (logseq-org-roam--find-buffer-visiting ,file))
+            (,exist-buf (find-buffer-visiting ,file))
             (,buf
              (or ,exist-buf
                  (let ((auto-mode-alist nil)
                        (find-file-hook nil))
-                   (logseq-org-roam--find-file-noselect ,file)))))
+                   (find-file-noselect ,file)))))
        (unwind-protect
            (with-current-buffer ,buf
              (setq inhibit-read-only t)
@@ -376,7 +371,7 @@ previously created."
      (setq default-directory (file-name-directory ,file))
      (delay-mode-hooks
        (let ((org-inhibit-startup t)) (org-mode)))
-     (logseq-org-roam--insert-file-contents ,file)
+     (insert-file-contents ,file)
      ,@body))
 
 ;; TODO: test
@@ -504,7 +499,7 @@ Return the number of files from INVENTORY that are currently
 being modified in a buffer."
   (let ((count 0))
     (dolist (file files)
-      (when-let* ((existing_buf (logseq-org-roam--find-buffer-visiting file))
+      (when-let* ((existing_buf (find-buffer-visiting file))
                   (mod-p (buffer-modified-p existing_buf)))
         (setq count (1+ count))
         (let* ((plist (gethash file inventory))
@@ -693,7 +688,7 @@ that were parsed."
                          inventory))
             (logseq-org-roam--with-temp-buffer file
               (let ((new_plist (plist-put plist :hash
-                                          (logseq-org-roam--secure-hash
+                                          (secure-hash
                                            'sha256 (current-buffer)))))
                 (setq new_plist
                       (logseq-org-roam--parse-buffer new_plist parts))
@@ -977,7 +972,7 @@ first."
                          inventory))
             (logseq-org-roam--with-edit-buffer file
               (unless (string= (plist-get plist :hash)
-                               (logseq-org-roam--secure-hash
+                               (secure-hash
                                 'sha256 (current-buffer)))
                 (throw 'update-error 'hash-mismatch))
               (if link-p
@@ -1099,13 +1094,13 @@ Return the list of new files created."
                                 path fuzzy-dict))
                 (setq new-title path)))
               (cond ((not new-path) t) ;; link to existing entry
-                    ((not (logseq-org-roam--file-exists-p
+                    ((not (file-exists-p
                            (directory-file-name
                             (file-name-directory new-path))))
                      (princ (format "- For %s link %s in %s: parent directory of %s does not exists\n"
                                     (if (eq type 'file) "file" "fuzzy")
                                     path (logseq-org-roam--fl file) new-path)))
-                    ((logseq-org-roam--file-exists-p new-path)
+                    ((file-exists-p new-path)
                      (princ (format "- For %s link %s in %s: file %s already exists\n"
                                     (if (eq type 'file) "file" "fuzzy")
                                     path (logseq-org-roam--fl file) new-path)))
@@ -1195,12 +1190,12 @@ Return non-nil if issues where found."
     (user-error "logseq-org-roam: `org-roam-directory' is not set"))
    ((not (file-directory-p org-roam-directory))
     (user-error "logseq-org-roam: `org-roam-directory' is not a directory"))
-   ((not (logseq-org-roam--file-exists-p
+   ((not (file-exists-p
           (logseq-org-roam--expand-file
            logseq-org-roam-pages-directory
            org-roam-directory)))
     (user-error "logseq-org-roam: Logseq pages must be found directly under `org-roam-directory'"))
-   ((not (logseq-org-roam--file-exists-p
+   ((not (file-exists-p
           (logseq-org-roam--expand-file
            logseq-org-roam-journals-directory
            org-roam-directory)))
