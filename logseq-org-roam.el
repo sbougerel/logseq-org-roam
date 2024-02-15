@@ -381,7 +381,7 @@ previously created."
 
 ;; TODO: test
 (defmacro logseq-org-roam--catch-fun (sym errs fun &rest body)
-  "Catch SYM ERRS during BODY's execution and pass it to FUN."
+  "Catch ERRS for SYM during BODY's execution and pass it to FUN."
   (declare (indent 3) (debug t))
   (let ((result (make-symbol "result")))
     `(let ((,result (catch ,sym ,@body)))
