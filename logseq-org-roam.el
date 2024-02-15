@@ -304,9 +304,10 @@ in `logseq-org-roam-create-translate-default'."
   :group 'logseq-org-roam)
 
 ;; Aliased file function that interact with file system for mocking
+;; TODO remove superfluous aliasing, improve tests
 (defalias 'logseq-org-roam--expand-file #'expand-file-name)
-(defalias 'logseq-org-roam--find-file-noselect #'find-file-noselect)
 (defalias 'logseq-org-roam--insert-file-contents #'insert-file-contents)
+(defalias 'logseq-org-roam--find-file-noselect #'find-file-noselect)
 (defalias 'logseq-org-roam--find-buffer-visiting #'find-buffer-visiting)
 (defalias 'logseq-org-roam--secure-hash #'secure-hash)
 (defalias 'logseq-org-roam--file-exists-p #'file-exists-p)
@@ -324,7 +325,7 @@ in `logseq-org-roam-create-translate-default'."
              (setq default-directory org-roam-directory)
              (setq buffer-read-only nil)
              (setq buffer-file-name nil)
-             (setq buffer-undo-list t) ;; disable undo
+             (setq buffer-undo-list t)
              (goto-char (point-max))
              (if (/= (point-min) (point-max))
                  (insert "\n\n"))
