@@ -593,8 +593,7 @@ being modified in a buffer."
                  (not (org-element-property :search-option link)))
             (let* ((path (org-element-property :path link))
                    (true-path (logseq-org-roam--expand-file path)))
-              ;; Convert only links that point to org-roam files
-              ;; TODO: store expanded file links (instead of relative)
+              ;; TODO: Only check org-roam-file-p at converstion
               (if (org-roam-file-p true-path)
                   (let* ((descr (buffer-substring-no-properties
                                  (org-element-property :contents-begin link)
@@ -784,6 +783,7 @@ Returns the number of conflicts found"
                     (plist-get plist :parse-error)
                     (plist-get plist :update-error))
           ;; NOTE: Similar title and aliases from the same file are not marked as conflict
+          ;; TODO: cl-* could be faster
           (let ((merged (seq-uniq
                          (seq-map #'logseq-org-roam--normalize-text
                                   (append
@@ -873,9 +873,7 @@ If the file is a journal entry, format the title accroding to
       base-name)))
 
 (defun logseq-org-roam--update-first-section (plist)
-  "Update current buffer first section based on PLIST.
-This function returns the amount of characters added to the
-buffer during the update."
+  "Update current buffer first section based on PLIST."
   (org-with-wide-buffer
    (let ((start-size (buffer-size))
          (first-section-p (plist-get plist :first-section-p))
@@ -938,8 +936,7 @@ only with file links, this hashtable is not used."
           ;; TODO: log link updates
           (if descr
               (insert (concat "[[id:" id "][" descr "]]"))
-            (insert (concat "[[id:" id "][" path "]]")))))))
-  t)
+            (insert (concat "[[id:" id "][" path "]]"))))))))
 
 (defun logseq-org-roam--update-all (files inventory &optional link-p file-dict fuzzy-dict)
   "Update all FILES according to INVENTORY.
