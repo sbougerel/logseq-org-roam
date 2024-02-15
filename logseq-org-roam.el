@@ -798,8 +798,8 @@ Returns the number of conflicts found"
                   (setq conflict-count (1+ conflict-count))
                   (if (consp val)
                       (setq other-file (car val))
-                    (puthash target (cons other-file) fuzzy-dict)
-                    (setq other-file val))
+                    (setq other-file val)
+                    (puthash target (cons other-file) fuzzy-dict))
                   ;; Log the conflict
                   (let* ((this-title-p (string= target (logseq-org-roam--normalize-text
                                                         (plist-get plist :title))))

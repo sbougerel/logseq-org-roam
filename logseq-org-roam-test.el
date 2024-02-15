@@ -271,36 +271,44 @@ A [[test links]] matching headline.
                      expected '(first-section file-links fuzzy-links))))
        (should (equal actual expected))))))
 
-(ert-deftest logseq-org-roam--calculate-fuzzy-dict--with-conflicts ()
-  (let ((inventory (make-hash-table :test #'equal))
-        (org-roam-directory default-directory)
-        (files '("x" "y" "z")))
-    (puthash "x" '(:title "A"
-                   :aliases ("b" "c")) inventory)
-    (puthash "y" '(:title "B"
-                   :aliases ("d" "c")) inventory)
-    (puthash "z" '(:title "D"
-                   :aliases ("e" "f")) inventory)
+(ert-deftest logseq-org-roam--fill-fuzzy-dict--with-conflicts ()
+  (let ((org-roam-directory default-directory)
+        (inventory (make-hash-table-from '(("x" . (:title "A"
+                                                   :aliases ("b" "c")))
+                                           ("y" . (:title "B"
+                                                   :aliases ("d" "c")))
+                                           ("z" . (:title "D"
+                                                   :aliases ("e" "f"))))))
+        (fuzzy-dict (make-hash-table :test #'equal))
+        (files '("x" "y" "z"))
+        actual
+        logs)
     (with-temp-buffer
-      (let* ((standard-output (current-buffer))
-             (actual_dict (logseq-org-roam--calculate-fuzzy-dict
-                           files
-                           inventory)))
-        (should (= (hash-table-count actual_dict) 6))
-        (should (equal (gethash "a" actual_dict) "x"))
-        (should (equal (gethash "b" actual_dict) 'conflict))
-        (should (equal (gethash "c" actual_dict) 'conflict))
-        (should (equal (gethash "d" actual_dict) 'conflict))
-        (should (equal (gethash "e" actual_dict) "z"))
-        (should (equal (gethash "f" actual_dict) "z"))
-        (should (equal (buffer-string)
-                       "** Building dictionary of titles and aliases:
-- The title \"b\" in [[file:y][y]] conflicts with the alias in [[file:x][x]], links to \"b\" will not be converted.
-- The alias \"c\" in [[file:y][y]] conflicts with the alias in [[file:x][x]], links to \"c\" will not be converted.
-- The title \"d\" in [[file:z][z]] conflicts with the alias in [[file:y][y]], links to \"d\" will not be converted.
+      (let* ((standard-output (current-buffer)))
+        (mocker-let ((logseq-org-roam--fl (p)
+                                          :ordered nil
+                                          ((:input '("x") :output "[[x]]")
+                                           (:input '("y") :output "[[y]]")
+                                           (:input '("z") :output "[[z]]"))))
+                    (setq actual (logseq-org-roam--fill-fuzzy-dict
+                                  fuzzy-dict files
+                                  inventory)))
+        (setq logs (buffer-string))))
+    (should (= (hash-table-count fuzzy-dict) 6))
+    (should (equal (gethash "a" fuzzy-dict) "x"))
+    (should (equal (gethash "b" fuzzy-dict) '("x")))
+    (should (equal (gethash "c" fuzzy-dict) '("x")))
+    (should (equal (gethash "d" fuzzy-dict) '("y")))
+    (should (equal (gethash "e" fuzzy-dict) "z"))
+    (should (equal (gethash "f" fuzzy-dict) "z"))
+    (should (equal logs
+                   "** Filling dictionary of titles and aliases:
+- The title \"b\" in [[y]] conflicts with the alias in [[x]], links will not be converted.
+- The alias \"c\" in [[y]] conflicts with the alias in [[x]], links will not be converted.
+- The title \"d\" in [[z]] conflicts with the alias in [[y]], links will not be converted.
 6 entries in total
 3 conflicts
-"))))))
+"))))
 
 (ert-deftest logseq-org-roam--fill-path-dict--with-conflict ()
   (let ((file-dict (make-hash-table :test #'equal))
@@ -339,45 +347,14 @@ A [[test links]] matching headline.
 
 
 (ert-deftest logseq-org-roam--update-links ()
-  (with-temp-buffer
-    (insert ":PROPERTIES:
-:ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
-:END:
-#+title: Test note
-
-* TODO Test links [/]
-** <<Target>>A target
-#+NAME: code-block
-#+BEGIN_SRC emacs-lisp -n -r
-  (save-excursion                 (ref:example)
-     (search-forward \"[[not-a-link]]\")
-#+END_SRC
-** A fuzzy [[Logseq]] link
-:PROPERTIES:
-:CUSTOM_ID: some-custom-id
-:END:
-A coderef [[(example)]] link.
-** A file link to a [[file:dir/note.org][note]]
-An inline image [[image.jpg]] matched by image-file-name-extensions.
-** A file link with a search option [[file:dir/note.org::1][note]]
-A link to [[code-block]].
-A [[#some-custom-id]] link.
-** Link to [[target]]
-A [[*Test links][headline link]].
-A [[test links]] matching headline.
-")
-    (org-mode)
-    (let ((inventory (make-hash-table :test #'equal))
-          (fuzzy-dict (make-hash-table :test #'equal)))
-      (puthash "dir/note.org" '(:id "A") inventory)
-      (puthash "p" '(:id "B") inventory)
-      (puthash "logseq" "p" fuzzy-dict)
-      (mocker-let
-       ((logseq-org-roam--expand-file (p)
-                                      ((:input '("dir/note.org") :output-generator #'identity))))
-       (let* ((links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")
-                       (title 288 298 "Logseq" nil "[[Logseq]]")))
-              (result ":PROPERTIES:
+  (let ((org-roam-directory default-directory)
+        (inventory (make-hash-table-from '(("dir/Note.org" . (:id "A"))
+                                           ("b" . (:id "B")))))
+        (fuzzy-dict (make-hash-table-from '(("logseq" . "b"))))
+        (file-dict (make-hash-table-from '(("dir/note.org" . "dir/Note.org"))))
+        (links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]")
+                 (title 288 298 "Logseq" nil "[[Logseq]]")))
+        (result ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 #+title: Test note
@@ -403,14 +380,47 @@ A [[#some-custom-id]] link.
 A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
-              (expected t)
-              (actual (logseq-org-roam--update-links links inventory fuzzy-dict)))
-         (should (equal result (buffer-string)))
-         (should (eq actual expected)))))))
+        (expected t)
+        actual)
+    (with-temp-buffer
+      (insert ":PROPERTIES:
+:ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
+:END:
+#+title: Test note
+
+* TODO Test links [/]
+** <<Target>>A target
+#+NAME: code-block
+#+BEGIN_SRC emacs-lisp -n -r
+  (save-excursion                 (ref:example)
+     (search-forward \"[[not-a-link]]\")
+#+END_SRC
+** A fuzzy [[Logseq]] link
+:PROPERTIES:
+:CUSTOM_ID: some-custom-id
+:END:
+A coderef [[(example)]] link.
+** A file link to a [[file:dir/note.org][note]]
+An inline image [[image.jpg]] matched by image-file-name-extensions.
+** A file link with a search option [[file:dir/note.org::1][note]]
+A link to [[code-block]].
+A [[#some-custom-id]] link.
+** Link to [[target]]
+A [[*Test links][headline link]].
+A [[test links]] matching headline.
+")
+      (org-mode)
+      (mocker-let
+       ((logseq-org-roam--expand-file (p)
+                                      ((:input '("dir/note.org") :output "dir/note.org"))))
+       (setq actual (logseq-org-roam--update-links links inventory file-dict fuzzy-dict))))
+    (should (equal result (buffer-string)))
+    (should (eq actual expected))))
 
 (ert-deftest logseq-org-roam--update-links--faulty ()
-  (with-temp-buffer
-    (insert ":PROPERTIES:
+  (let ((links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]" "A")
+                 (title 288 298 "Logseq" nil "[[Logseq]]" "B")))
+        (content ":PROPERTIES:
 :ID:       9f9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f
 :END:
 #+title: Test note
@@ -436,15 +446,16 @@ A [[#some-custom-id]] link.
 A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
-    (org-mode)
-    (let* ((links '((file 400 427 "dir/note.org" "note" "[[file:dir/note.org][note]]" "A")
-                    (title 288 298 "Logseq" nil "[[Logseq]]" "B")))
-           (result (buffer-string)) ;; unchanged
-           (expected 'mismatch-link)
-           (actual (catch 'update-error
-                     (logseq-org-roam--update-links links nil nil))))
-      (should (equal result (buffer-string)))
-      (should (eq actual expected)))))
+        (expected 'mismatch-link)
+        actual)
+    (with-temp-buffer
+      (insert content)
+      (org-mode)
+      (setq actual (catch 'update-error
+                     (logseq-org-roam--update-links links nil nil nil)))
+      (setq result (buffer-string)))
+    (should (equal result content))
+    (should (eq actual expected))))
 
 (ert-deftest logseq-org-roam--update-first-section--typical ()
   (with-temp-buffer
@@ -803,65 +814,66 @@ A [[test links]] matching headline.
   (let ((org-roam-directory default-directory)
         (logseq-org-roam-create-accept-func #'always)
         (logseq-org-roam-journals-directory "journals")
-        (logseq-org-roam-pages-directory "pages"))
-    (mocker-let
-     ((logseq-org-roam--create-path-file
-       (p f i)
-       ((:input-matcher #'always
-         :output-generator (lambda (p f i) (if (equal p "b") p)))))
-      (logseq-org-roam--create-path-fuzzy
-       (p f)
-       ((:input-matcher #'always
-         :output-generator (lambda (p f) (if (equal p "C") p)))))
-      (file-name-directory
-       (f)
-       ((:input-matcher #'always :output "dir")))
-      (directory-file-name
-       (f)
-       ((:input-matcher #'always :output-generator #'identity)))
-      (logseq-org-roam--file-exists-p
-       (f)
-       ((:input-matcher #'always
-         :output-generator
-         (lambda (f)
-           (member f '("dir"))))))
-      (org-roam-file-p
-       (p)
-       ((:input-matcher #'always :output t)))
-      (logseq-org-roam--fl
-       (f)
-       ((:input-matcher (lambda (f) (stringp f))
-         :output-generator (lambda (f) (format "[[file:%s][%s]]" f f)))))
-      (logseq-org-roam--find-file-noselect
-       (f &optional n r w)
-       ((:input-matcher #'always
-         :output-generator (lambda (f &optional n r w)
-                             (get-buffer-create f t)))))
-      (org-id-get-create
-       (&optional f)
-       ((:input-matcher #'always
-         :output-generator #'ignore)))
-      (save-buffer
-       (&optional b)
-       ((:input-matcher #'always :output-generator #'ignore))))
-     (let* ((inventory (make-hash-table-from
-                        '(("a" . (:links
-                                  ((file 1 2 "a" "A" "[[file:a][A]")
-                                   (file 1 2 "b" "B" "[[file:b][B]")
-                                   (fuzzy 1 2 "C" "c" "[[C][c]]")
-                                   (fuzzy 1 2 "D" "d" "[[D][d]]")))))))
-            (fuzzy-dict (make-hash-table-from '(("D" . "a"))))
-            (expected '("C" "b"))
-            actual
-            log)
-       (with-temp-buffer
-         (let ((standard-output (current-buffer)))
-           (setq actual (logseq-org-roam--create-from
-                         '("a") inventory fuzzy-dict))
-           (setq logs (buffer-string))))
-       (should (equal actual expected))
-       (should (equal logs
-                      "** Creating new files:\n- Created [[file:b][b]] from the file link in [[file:a][a]]\n- Created [[file:C][C]] from the fuzzy link in [[file:a][a]]\n"))))))
+        (logseq-org-roam-pages-directory "pages")
+        (inventory (make-hash-table-from
+                    '(("a" . (:links
+                              ((file 1 2 "a" "A" "[[file:a][A]")
+                               (file 1 2 "b" "B" "[[file:b][B]")
+                               (fuzzy 1 2 "C" "c" "[[C][c]]")
+                               (fuzzy 1 2 "D" "d" "[[D][d]]")))))))
+        (fuzzy-dict (make-hash-table-from '(("D" . "a"))))
+        (file-dict (make-hash-table-from '(("a" . "a"))))
+        (expected '("C" "b"))
+        actual
+        log)
+    (with-temp-buffer
+      (let ((standard-output (current-buffer)))
+        (mocker-let
+         ((logseq-org-roam--create-path-file
+           (p f i)
+           ((:input-matcher #'always
+             :output-generator (lambda (p f i) (if (equal p "b") p)))))
+          (logseq-org-roam--create-path-fuzzy
+           (p f)
+           ((:input-matcher #'always
+             :output-generator (lambda (p f) (if (equal p "C") p)))))
+          (file-name-directory
+           (f)
+           ((:input-matcher #'always :output "dir")))
+          (directory-file-name
+           (f)
+           ((:input-matcher #'always :output-generator #'identity)))
+          (logseq-org-roam--file-exists-p
+           (f)
+           ((:input-matcher #'always
+             :output-generator
+             (lambda (f)
+               (member f '("dir"))))))
+          (org-roam-file-p
+           (p)
+           ((:input-matcher #'always :output t)))
+          (logseq-org-roam--fl
+           (f)
+           ((:input-matcher (lambda (f) (stringp f))
+             :output-generator (lambda (f) (format "[[%s]]" f f)))))
+          (logseq-org-roam--find-file-noselect
+           (f &optional n r w)
+           ((:input-matcher #'always
+             :output-generator (lambda (f &optional n r w)
+                                 (get-buffer-create f t)))))
+          (org-id-get-create
+           (&optional f)
+           ((:input-matcher #'always
+             :output-generator #'ignore)))
+          (save-buffer
+           (&optional b)
+           ((:input-matcher #'always :output-generator #'ignore))))
+         (setq actual (logseq-org-roam--create-from
+                       '("a") inventory file-dict fuzzy-dict)))
+        (setq logs (buffer-string))))
+    (should (equal actual expected))
+    (should (equal logs
+                   "** Creating new files:\n- Created [[b]] from the file link in [[a]]\n- Created [[C]] from the fuzzy link in [[a]]\n"))))
 
 ;; TODO test logseq-org-roam - mocking all internal functions
 
