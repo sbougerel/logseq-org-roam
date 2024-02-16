@@ -2,15 +2,33 @@
 
 ;; Copyright (C) 2024, Sylvain Bougerel
 
-;; Author: Sylvain Bougerel
+;; Author: Sylvain Bougerel <sylvain.bougerel.devel@gmail.com>
+;; Maintainer: Sylvain Bougerel <sylvain.bougerel.devel@gmail.com>
 ;; URL: https://github.com/sbougerel/logseq-org-roam/
 ;; Keywords: tools outlines
 ;; Version: 1.0.0
 ;; Package-Requires: ((org-roam "2.2.2") (emacs "27.2") (org "9.3"))
+;; URL: https://github.com/sbougerel/logseq-org-roam
 
 ;; This file is NOT part of GNU Emacs.
 
+;; This program is free software: you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free Software
+;; Foundation, either version 3 of the License, or (at your option) any later
+;; version.
+;;
+;; This program is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+;; FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+;; details.
+;;
+;; You should have received a copy of the GNU General Public License along with
+;; this program.  If not, see <https://www.gnu.org/licenses/>.
+
 ;;; Commentary:
+;;
+;; [![License GPLv3](https://img.shields.io/badge/license-GPL_v3-green.svg)](http://www.gnu.org/licenses/gpl-3.0.html)
+;; [![CI](https://github.com/sbougerel/logseq-org-roam/actions/workflows/makefile.yml/badge.svg)](https://github.com/sbougerel/logseq-org-roam/actions)
 ;;
 ;; This package provide facilities to convert Logseq files to `org-roam' files
 ;; and author missing `org-roam' files when necessary.  It should be used on the

@@ -1,8 +1,11 @@
-<a href="https://github.com/sbougerel/logseq-org-roam/"><img src="https://www.gnu.org/software/emacs/images/emacs.png" alt="Emacs Logo" width="80" height="80" align="right"></a>
+<a href="https://github.com/sbougerel/logseq-org-roam"><img src="https://www.gnu.org/software/emacs/images/emacs.png" alt="Emacs Logo" width="80" height="80" align="right"></a>
 ## logseq-org-roam.el
 *Logseq Org-roam converter*
 
 ---
+
+[![License GPLv3](https://img.shields.io/badge/license-GPL_v3-green.svg)](http://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/sbougerel/logseq-org-roam/actions/workflows/makefile.yml/badge.svg)](https://github.com/sbougerel/logseq-org-roam/actions)
 
 This package provide facilities to convert Logseq files to `org-roam` files
 and author missing `org-roam` files when necessary.  It should be used on the
@@ -161,8 +164,8 @@ original works above:
 
 The kind of links `logseq-org-roam` should convert.
 Value is a symbol, only the following are recognized:
-- \='files
-- \='fuzzy
+- 'files
+- 'fuzzy
 - nil (default, if unrecognized)
 
 You should customize this value based on your
@@ -172,9 +175,8 @@ than nil save some processing time.
 Links considered as candidates to be converted to `org-roam`
 ID links are of 2 types:
 
-- File links such as:
-  [[file:path/to/pages/page.org][DESCRIPTION]].
-- Fuzzy links such as [[TITLE-OR-ALIAS][DESCRIPTION]].
+- File links such as: `[[file:path/to/pages/page.org][DESCRIPTION]]`.
+- Fuzzy links such as `[[TITLE-OR-ALIAS][DESCRIPTION]]`.
 
 
 Matching rules for each kind of links are as follows.
@@ -190,16 +192,16 @@ When dealing with fuzzy links, it first ignores dedicated internal
 link formats that have specific meaning in `org-mode` (even if
 they are broken):
 
-- [[#custom-id]] links,
-- [[*heading]] links,
-- [[(coderef)]] links,
-- [[image.jpg]] inline links to images,
+- `[[#custom-id]]` links,
+- `[[*heading]]` links,
+- `[[(coderef)]]` links,
+- `[[image.jpg]]` inline links to images,
 
 Of the remaining fuzzy links, it discards links that match
 internally (as per `org-mode` rules) with:
 
-- <<targets>> or,
-- #+name: named elements or,
+- `<<targets>>` or,
+- `#+name`: named elements or,
 - a headline by text search,
 
 The leftover links are the candidates to be converted to
@@ -208,7 +210,7 @@ The leftover links are the candidates to be converted to
 
 Notes on using file links in Logseq.
 
-It is usually recommended to set ":org-mode/insert-file-link?"
+It is usually recommended to set `:org-mode/insert-file-link?`
 to true in Logseq, presumably to ensure the correct target is
 being pointed to.
 
@@ -354,8 +356,8 @@ While using this facility regularly makes `org-roam` and Logseq
 mostly interoperable; ID-links in Logseq show up as "Unlinked
 Reference" and thus break the connection in your Logseq graph.
 If you primarily rely on Logseq, this could be a deal-breaker.
-
 When called with `C-u` or MODE is not nil, it
+
 parses any files returned by `org-roam-list-files` (even if they
 are already indexed by `org-roam`).  This is useful if you've had
 a lot of edits with Logseq (or other), and some of the files that
@@ -389,7 +391,7 @@ following arguments:
 - '(64) or 64 or 'force-create: parse all files and create new
   files using your capture templates.  Equivalent to
   `C-u C-u C-u M-x logseq-org-roam`.
-
+  
 To find out how `logseq-org-roam` detects Logseq links, read the
 documentation string of `logseq-org-roam-link-types`.  To find
 out how `logseq-org-roam` uses your own capture templates, read
