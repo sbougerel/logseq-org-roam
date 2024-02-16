@@ -303,10 +303,6 @@ in `logseq-org-roam-create-translate-default'."
   :type 'alist
   :group 'logseq-org-roam)
 
-;; Aliased file function that interact with file system for mocking
-;; TODO remove superfluous aliasing, improve tests
-(defalias 'logseq-org-roam--expand-file #'expand-file-name)
-
 (defmacro logseq-org-roam--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
   (declare (debug t))
@@ -587,17 +583,14 @@ being modified in a buffer."
                  (org-element-property :contents-begin link)
                  (not (org-element-property :search-option link)))
             (let* ((path (org-element-property :path link))
-                   (true-path (logseq-org-roam--expand-file path)))
-              ;; TODO: Only check org-roam-file-p at converstion
-              (if (org-roam-file-p true-path)
-                  (let* ((descr (buffer-substring-no-properties
-                                 (org-element-property :contents-begin link)
-                                 (org-element-property :contents-end link)))
-                         (begin (org-element-property :begin link))
-                         (end (- (org-element-property :end link)
-                                 (org-element-property :post-blank link)))
-                         (raw (buffer-substring-no-properties begin end)))
-                    (push (list 'file begin end path descr raw) links)))))))
+                   (descr (buffer-substring-no-properties
+                           (org-element-property :contents-begin link)
+                           (org-element-property :contents-end link)))
+                   (begin (org-element-property :begin link))
+                   (end (- (org-element-property :end link)
+                           (org-element-property :post-blank link)))
+                   (raw (buffer-substring-no-properties begin end)))
+              (push (list 'file begin end path descr raw) links)))))
     (if links (setq plist (plist-put plist :links links))))
   plist)
 
@@ -712,7 +705,6 @@ The argument PARTS ensures that the function only parses the
 necessary parts of each files.
 
 Returns the number of files parsed without error."
-  ;; TODO: refactor to return the list of left-over files
   (princ "** Initial inventory:\n")
   (let* (count_cached
          count_external
@@ -825,7 +817,6 @@ repetitions will be removed.  This helps with mapping
             (replace-regexp-in-string "_+" "_" (downcase base))
             "." ext)))
 
-;; TODO: test
 (defun logseq-org-roam--fill-file-dict (file-dict files)
   "Fill FILE-DICT with the normalized path of each FILES.
 Maps each normalized path to the original path or to a `cons' with
@@ -920,7 +911,7 @@ only with file links, this hashtable is not used."
                      ;; file-dict and fuzzy-dict key can be `consp' (conflict)
                      (if (eq 'file type)
                          (gethash (logseq-org-roam--normalize-path
-                                   (logseq-org-roam--expand-file path)) file-dict)
+                                   (expand-file-name path)) file-dict)
                        (gethash (logseq-org-roam--normalize-text path) fuzzy-dict))
                      inventory) :id)))
       (save-excursion
@@ -1014,8 +1005,8 @@ link path are also replaced, see:
       (pcase-dolist (`(,regex . ,rep) logseq-org-roam-create-replace)
         (setq normalized (replace-regexp-in-string regex rep normalized))))
     (concat
-     (logseq-org-roam--expand-file
-      normalized (logseq-org-roam--expand-file
+     (expand-file-name
+      normalized (expand-file-name
                   (if (and time (not (time-equal-p 0 time)))
                       logseq-org-roam-journals-directory
                     logseq-org-roam-pages-directory)
@@ -1039,8 +1030,8 @@ The path needs to be expanded first before being checked against
 FILE-DICT, as it is normally relative to the FILE it is located
 in."
   (let ((expanded
-         (logseq-org-roam--expand-file path
-                                       (file-name-directory file))))
+         (expand-file-name path
+                           (file-name-directory file))))
     (if (eq 'not-found (gethash (logseq-org-roam--normalize-path expanded)
                                 file-dict 'not-found))
         expanded)))
@@ -1190,15 +1181,13 @@ Return non-nil if issues where found."
     (user-error "logseq-org-roam: `org-roam-directory' is not set"))
    ((not (file-directory-p org-roam-directory))
     (user-error "logseq-org-roam: `org-roam-directory' is not a directory"))
-   ((not (file-exists-p
-          (logseq-org-roam--expand-file
-           logseq-org-roam-pages-directory
-           org-roam-directory)))
+   ((not (file-exists-p (expand-file-name
+                         logseq-org-roam-pages-directory
+                         org-roam-directory)))
     (user-error "logseq-org-roam: Logseq pages must be found directly under `org-roam-directory'"))
-   ((not (file-exists-p
-          (logseq-org-roam--expand-file
-           logseq-org-roam-journals-directory
-           org-roam-directory)))
+   ((not (file-exists-p (expand-file-name
+                         logseq-org-roam-journals-directory
+                         org-roam-directory)))
     (user-error "logseq-org-roam: Logseq journals must be found directly under `org-roam-directory'"))
    (t)))
 
@@ -1326,6 +1315,7 @@ the documentation string of `logseq-org-roam-capture'."
            (setq inventory (logseq-org-roam--inventory-init files))
            (if (= 0 (logseq-org-roam--inventory-all
                      files inventory force_flag (append '(first-section) link-parts)))
+               ;; TODO: calcuate left-over files only
                (progn
                  (princ "No updates to perform\n")
                  ;; Check errors in inventory none-the-less

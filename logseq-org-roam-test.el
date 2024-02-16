@@ -227,13 +227,8 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
       (org-mode)
-      (mocker-let
-       ((logseq-org-roam--expand-file (p)
-                                      ((:input '("dir/note.org") :output-generator #'identity)))
-        (org-roam-file-p (p)
-                         ((:input '("dir/note.org") :output t))))
-       (setq actual (logseq-org-roam--parse-buffer
-                     nil '(first-section file-links fuzzy-links)))))
+      (setq actual (logseq-org-roam--parse-buffer
+                    nil '(first-section file-links fuzzy-links))))
     (should (equal actual expected))))
 
 (ert-deftest logseq-org-roam--parse-buffer--idempotent ()
@@ -272,15 +267,8 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
       (org-mode)
-      (mocker-let
-       ((logseq-org-roam--expand-file (p)
-                                      ((:input '("dir/note.org")
-                                        :output-generator #'identity)))
-        (org-roam-file-p (p)
-                         ((:input '("dir/note.org")
-                           :output t))))
-       (setq actual (logseq-org-roam--parse-buffer
-                     expected '(first-section file-links fuzzy-links)))))
+      (setq actual (logseq-org-roam--parse-buffer
+                    expected '(first-section file-links fuzzy-links))))
     (should (equal actual expected))))
 
 (ert-deftest logseq-org-roam--fill-fuzzy-dict--with-conflicts ()
@@ -297,14 +285,15 @@ A [[test links]] matching headline.
         logs)
     (with-temp-buffer
       (let* ((standard-output (current-buffer)))
-        (mocker-let ((logseq-org-roam--fl (p)
-                                          :ordered nil
-                                          ((:input '("x") :output "[[x]]")
-                                           (:input '("y") :output "[[y]]")
-                                           (:input '("z") :output "[[z]]"))))
-                    (setq actual (logseq-org-roam--fill-fuzzy-dict
-                                  fuzzy-dict files
-                                  inventory)))
+        (mocker-let
+         ((logseq-org-roam--fl (p)
+                               :ordered nil
+                               ((:input '("x") :output "[[x]]")
+                                (:input '("y") :output "[[y]]")
+                                (:input '("z") :output "[[z]]"))))
+         (setq actual (logseq-org-roam--fill-fuzzy-dict
+                       fuzzy-dict files
+                       inventory)))
         (setq logs (buffer-string))))
     (should (= (hash-table-count fuzzy-dict) 6))
     (should (equal (gethash "a" fuzzy-dict) "x"))
@@ -332,18 +321,19 @@ A [[test links]] matching headline.
                  "/Path/Z.org"))
         actual
         log)
-    (mocker-let ((logseq-org-roam--fl (p)
-                                      :ordered nil
-                                      ((:input '("/Path/y_.org") :output "[[y_.org]]")
-                                       (:input '("/Path/y___.org") :output "[[y___.org]]")
-                                       (:input '("/Path/z.org") :output "[[z.org]]")
-                                       (:input '("/Path/Z.org") :output "[[Z.org]]"))))
-                (with-temp-buffer
-                  (let* ((standard-output (current-buffer)))
-                    (setq actual (logseq-org-roam--fill-file-dict
-                                  file-dict
-                                  files)))
-                  (setq log (buffer-string))))
+    (mocker-let
+     ((logseq-org-roam--fl (p)
+                           :ordered nil
+                           ((:input '("/Path/y_.org") :output "[[y_.org]]")
+                            (:input '("/Path/y___.org") :output "[[y___.org]]")
+                            (:input '("/Path/z.org") :output "[[z.org]]")
+                            (:input '("/Path/Z.org") :output "[[Z.org]]"))))
+     (with-temp-buffer
+       (let* ((standard-output (current-buffer)))
+         (setq actual (logseq-org-roam--fill-file-dict
+                       file-dict
+                       files)))
+       (setq log (buffer-string))))
     (should (= actual 2))
     (should (equal (hash-table-count file-dict) 3))
     (should (equal (gethash "/Path/x.org" file-dict) "/Path/X.org"))
@@ -421,9 +411,12 @@ A [[test links]] matching headline.
 ")
       (org-mode)
       (mocker-let
-       ((logseq-org-roam--expand-file
+       ((expand-file-name
          (p)
-         ((:input '("dir/note.org") :output "dir/note.org"))))
+         ((:min-occur 0 :max-occur nil
+           :record-cls mocker-passthrough-record
+           :input-matcher (lambda (p) (not (string= p "dir/note.org"))))
+          (:input '("dir/note.org") :output "dir/note.org"))))
        (logseq-org-roam--update-links links inventory file-dict fuzzy-dict))
       (setq logs (buffer-string)))
     (should (equal result logs))))
@@ -532,7 +525,13 @@ A [[test links]] matching headline.
              :output-generator (lambda (f) (format "[[%s]]" f f)))))
           (secure-hash
            (a o &optional s e b)
-           ((:occur 3
+           :ordered nil
+           ((:record-cls mocker-passthrough-record
+             :input-matcher (lambda (a o &optional s e b)
+                              (not (and (eq a 'sha256)
+                                        (bufferp o)
+                                        (not s) (not e) (not b)))))
+            (:occur 3
              :input-matcher (lambda (a o &optional s e b)
                               (and (eq a 'sha256)
                                    (bufferp o)
@@ -612,7 +611,13 @@ A [[test links]] matching headline.
              :output-generator (lambda (f) (format "[[%s]]" f f)))))
           (secure-hash
            (a o &optional s e b)
-           ((:occur 3
+           :ordered nil
+           ((:record-cls mocker-passthrough-record
+             :input-matcher (lambda (a o &optional s e b)
+                              (not (and (eq a 'sha256)
+                                        (bufferp o)
+                                        (not s) (not e) (not b)))))
+            (:occur 3
              :input-matcher (lambda (a o &optional s e b)
                               (and (eq a 'sha256)
                                    (bufferp o)
@@ -682,7 +687,13 @@ A [[test links]] matching headline.
            ((:occur 3 :input-matcher #'always :output nil)))
           (secure-hash
            (a o &optional s e b)
-           ((:occur 3
+           :ordered nil
+           ((:record-cls mocker-passthrough-record
+             :input-matcher (lambda (a o &optional s e b)
+                              (not (and (eq a 'sha256)
+                                        (bufferp o)
+                                        (not s) (not e) (not b)))))
+            (:occur 3
              :input-matcher (lambda (a o &optional s e b)
                               (and (eq a 'sha256)
                                    (bufferp o)
@@ -692,16 +703,16 @@ A [[test links]] matching headline.
            (f &optional n r w)
            ((:input '("a" nil nil nil) ; no modifications
              :output-generator (lambda (f &optional n r w)
-                                 (get-buffer-create " *foo*" t)))
+                                 (generate-new-buffer "*test*" t)))
             (:input '("h" nil nil nil) ; with modifications!
              :output-generator (lambda (f &optional n r w)
-                                 (let ((buf (get-buffer-create " *foo*" t)))
+                                 (let ((buf (generate-new-buffer "*test*" t)))
                                    (with-current-buffer buf
                                      (set-buffer-modified-p t))
                                    buf)))
             (:input '("i" nil nil nil) ; no modifications
              :output-generator (lambda (f &optional n r w)
-                                 (get-buffer-create " *foo*" t)))))
+                                 (generate-new-buffer "*test*" t)))))
           (save-buffer
            (&optional b)
            ((:occur 1
@@ -720,60 +731,65 @@ A [[test links]] matching headline.
 (ert-deftest logseq-org-roam--update-all--links ()
   (let (logs
         actual
-        file-buf
         (org-roam-directory default-directory)
         (inventory (make-hash-table-from
                     '(("a" . (:hash "hash" :links '("foo")))
                       ("h" . (:hash "hash" :links '("foo"))))))
         (expected '("h")))
     (with-temp-buffer
-      (setq file-buf (current-buffer))
-      (with-temp-buffer
-        (let ((standard-output (current-buffer)))
-          (mocker-let
-           ((logseq-org-roam--fl
-             (f)
-             ((:occur 1
-               :input-matcher (lambda (f) (stringp f))
-               :output-generator (lambda (f) (format "[[%s]]" f f)))))
-            (logseq-org-roam--update-links
-             (p i d1 d2)
-             ((:occur 2
-               :input-matcher (lambda (p i d1 d2)
-                                (and (consp p)
-                                     (hash-table-p i)
-                                     (not d1) (not d2)))
-               :output-generator #'ignore)))
-            (find-buffer-visiting
-             (f &optional p)
-             ((:occur 2
-               :input-matcher (lambda (f &optional p)
-                                (stringp f))
-               :output nil)))
-            (secure-hash
-             (a o &optional s e b)
-             ((:occur 2
-               :input-matcher (lambda (a o &optional s e b)
-                                (and (eq a 'sha256)
-                                     (bufferp o)
-                                     (not s) (not e) (not b)))
-               :output "hash")))
-            (find-file-noselect
-             (f &optional n r w)
-             ((:input '("a" nil nil nil) ; no modifications
-               :output file-buf)
-              (:input '("h" nil nil nil) ; with modifications
-               :output-generator (lambda (f &optional n r w)
-                                   (with-current-buffer file-buf
+      (let ((standard-output (current-buffer)))
+        (mocker-let
+         ((logseq-org-roam--fl
+           (f)
+           ((:occur 1
+             :input-matcher (lambda (f) (stringp f))
+             :output-generator (lambda (f) (format "[[%s]]" f f)))))
+          (logseq-org-roam--update-links
+           (p i d1 d2)
+           ((:occur 2
+             :input-matcher (lambda (p i d1 d2)
+                              (and (consp p)
+                                   (hash-table-p i)
+                                   (not d1) (not d2)))
+             :output-generator #'ignore)))
+          (find-buffer-visiting
+           (f &optional p)
+           ((:occur 2
+             :input-matcher (lambda (f &optional p)
+                              (stringp f))
+             :output nil)))
+          (secure-hash
+           (a o &optional s e b)
+           :ordered nil
+           ((:record-cls mocker-passthrough-record
+             :input-matcher (lambda (a o &optional s e b)
+                              (not (and (eq a 'sha256)
+                                        (bufferp o)
+                                        (not s) (not e) (not b)))))
+            (:occur 2
+             :input-matcher (lambda (a o &optional s e b)
+                              (and (eq a 'sha256)
+                                   (bufferp o)
+                                   (not s) (not e) (not b)))
+             :output "hash")))
+          (find-file-noselect
+           (f &optional n r w)
+           ((:input '("a" nil nil nil) ; no modifications
+             :output-generator (lambda (f &optional n r w)
+                                 (generate-new-buffer "*test*" t)))
+            (:input '("h" nil nil nil) ; with modifications!
+             :output-generator (lambda (f &optional n r w)
+                                 (let ((buf (generate-new-buffer "*test*" t)))
+                                   (with-current-buffer buf
                                      (set-buffer-modified-p t))
-                                   file-buf))))
-            (save-buffer
-             (&optional b)
-             ((:occur 1
-               :input-matcher (lambda (b) (not b)) :output-generator #'ignore))))
-           (setq actual (logseq-org-roam--update-all
-                         '("a" "h") inventory t nil nil))))
-        (setq logs (buffer-string))))
+                                   buf)))))
+          (save-buffer
+           (&optional b)
+           ((:occur 1
+             :input-matcher (lambda (b) (not b)) :output-generator #'ignore))))
+         (setq actual (logseq-org-roam--update-all
+                       '("a" "h") inventory t nil nil))))
+      (setq logs (buffer-string)))
     (should (equal actual expected))
     (should (equal logs
                    "** Updating files:\n- Updated links of [[h]]\n"))))
@@ -796,10 +812,18 @@ A [[test links]] matching headline.
         actual)
     (pcase-dolist (`(,input . ,expected) testdata)
       (mocker-let
-       ((logseq-org-roam--expand-file
+       ((expand-file-name
          (f &optional d)
-         ((:min-occur 0 :max-occur 2
-           :input-matcher (lambda (f &optional d) (and (stringp f) (stringp d)))
+         :ordered nil
+         ((:min-occur 0 :max-occur nil
+           :record-cls mocker-passthrough-record
+           :input-matcher (lambda (f &optional d)
+                            (not (string= (substring d 0 (length org-roam-directory))
+                                          org-roam-directory))))
+          (:occur 2
+           :input-matcher (lambda (f &optional d)
+                            (string= (substring d 0 (length org-roam-directory))
+                                     org-roam-directory))
            :output-generator (lambda (f &optional d) (concat d "/" f))))))
        (setq actual (logseq-org-roam-create-translate-default input)))
       (should (equal actual expected)))))
@@ -854,7 +878,7 @@ A [[test links]] matching headline.
            (f &optional n r w)
            ((:input-matcher #'always
              :output-generator (lambda (f &optional n r w)
-                                 (get-buffer-create f t)))))
+                                 (generate-new-buffer "*test*" t)))))
           (org-id-get-create
            (&optional f)
            ((:input-matcher #'always
