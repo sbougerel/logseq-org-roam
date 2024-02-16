@@ -23,7 +23,7 @@ modified with univeral arguments.  See `logseq-org-roam` for more
 information.
 
 *You should keep a backup of your `org-roam-directory` before using this
-*package.*
+package.*
 
 ### Installation
 
@@ -117,10 +117,10 @@ are not kept by this package.  The author uses version control.
 ### History
 
 
-This package is based on an original idea by William R Burdick Jr
-(https://gist.github.com/zot/ddf1a89a567fea73bc3c8a209d48f527) and its port
-to a package by Ivan Danov (https://github.com/idanov/org-roam-logseq.el).
-It is a complete rewrite.
+This package is based on an original [gist by William R Burdick
+Jr](https://gist.github.com/zot/ddf1a89a567fea73bc3c8a209d48f527) and its port
+to a [package by Ivan Danov](https://github.com/idanov/org-roam-logseq.el).  It
+is a complete rewrite.
 
 Some limitations in the orignal works above motivated me to write a new
 package:
@@ -164,12 +164,12 @@ original works above:
 
 The kind of links `logseq-org-roam` should convert.
 Value is a symbol, only the following are recognized:
-- 'files
-- 'fuzzy
+- `'files`
+- `'fuzzy`
 - nil (default, if unrecognized)
 
 You should customize this value based on your
-":org-mode/insert-file-link?" setting in Logseq.  Values other
+`:org-mode/insert-file-link?` setting in Logseq.  Values other
 than nil save some processing time.
 
 Links considered as candidates to be converted to `org-roam`
