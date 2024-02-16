@@ -32,10 +32,10 @@
 ;;
 ;; This package provide facilities to convert Logseq files to `org-roam' files
 ;; and author missing `org-roam' files when necessary.  It should be used on the
-;; entire `org-roam-directory' at once.  By default, it use the `org-roam' cache
-;; to ensure that only the necessary files are parsed.  Finally, it provides
-;; clear descriptions of the changes it performs.  Overall, it makes Logseq and
-;; `org-roam' interoperable to some extent.
+;; entire `org-roam-directory' at once.  By default, it uses the `org-roam'
+;; cache to ensure that only the necessary files are parsed.  Finally, it
+;; provides clear descriptions of the changes it performs.  Overall, it makes
+;; Logseq and `org-roam' interoperable to some extent.
 ;;
 ;;; Usage
 ;;
