@@ -3,7 +3,7 @@
 ;; Copyright (C) 2024, Sylvain Bougerel
 
 ;; Author: Sylvain Bougerel
-;; URL: https://github.com/sbougerel/logseq-org-roam.el/
+;; URL: https://github.com/sbougerel/logseq-org-roam/
 ;; Keywords: tools outlines
 ;; Version: 1.0.0
 ;; Package-Requires: ((org-roam "2.2.2") (emacs "27.2") (org "9.3"))
@@ -12,93 +12,149 @@
 
 ;;; Commentary:
 ;;
-;; This package provides facilities to convert logseq files to org-roam files,
-;; provided Logseq is configured appropriately (see below for more explanation).
+;; This package provide facilities to convert Logseq files to `org-roam' files
+;; and author missing `org-roam' files when necessary.  It should be used on the
+;; entire `org-roam-directory' at once.  By default, it use the `org-roam' cache
+;; to ensure that only the necessary files are parsed.  Finally, it provides
+;; clear descriptions of the changes it performs.  Overall, it makes Logseq and
+;; `org-roam' interoperable to some extent.
 ;;
-;; Characteristics, in order of importance:
+;;; Usage
 ;;
-;;   - Fast: should handle graphs with a thousand files in less than a second
-;;     (when using native compilation),
-;;   - Idempotent: can be run multiple times on the same files without changing
-;;     them,
-;;   - Safe: does not perform destructive operations on your notes, does not leave
-;;     files in a broken state, does not delete files.
-;;   - Interactive: when visiting an org-roam file, prompt for conversion
-;;     (if available),
-;;   - Descriptive: logs are printed in a dedicated buffer so you can keep track
-;;     of the changes performed,
-;;   - Compliant: follows Emacs and Org conventions
+;; Call `logseq-org-roam' to convert Logseq files to `org-roam' files.  This
+;; function is the single entry point to this package.  Its behaviour can be
+;; modified with univeral arguments.  See `logseq-org-roam' for more
+;; information.
 ;;
-;; Speed is primarily achieved firstly by ensuring that during processing, no
-;; unecessary work is performed (e.g. no loading of images, rendering of latex,
-;; etc) beyond parsing the org AST.  And secondly, by ensuring that all required
-;; modifications have been identified before they are performed to reduce the
-;; number of passes to the minimum.
+;; *You should keep a backup of your `org-roam-directory' before using this
+;; *package.*
 ;;
-;; This package features a single point of entry: `logseq-org-roam' which
-;; examines Logseq files under your org-roam directory and converts them to
-;; org-roam.
+;;; Installation
 ;;
-;; What are the rules for import and the resulting actions?
+;; With `use-package.el' and `straight.el', you can grab this package from
+;; Github with:
 ;;
-;;   1. A note has no org-id -> org-id will be added and org-roam DB will be
-;;      updated
+;;     (use-package logseq-org-roam
+;;      :straight (:host github
+;;                 :repo "sbougerel/logseq-org-roam"
+;;                 :files ("*.el")))
 ;;
-;;   2. A note has no "#+title:" element -> a title element will be created
-;;      based on the file name and the org-roam DB will be updated
+;;; Interoperability with Logseq
 ;;
-;;   3. A Logseq link "[[Some link]]" is found and there is no existing org-roam
-;;      DB entry corresponding -> create an empty page for it (according to
-;;      user's default capture template) and update the link to
-;;      "[[id:123456789][Some link]]"
+;; This package assumes that the `org-roam-directory' shares its location with
+;; the Logseq graph.  The expected file structure should be similar to:
 ;;
-;;   4. A Logseq link "[[Some link]]" is found and there is a corresponding
-;;      org-roam DB entry -> update the link to [[id:123456789][Some link]]
+;;     .
+;;     └── org-roam-directory/
+;;         ├── assets/          ;; attachements
+;;         ├── journals/        ;; journals in Logseq, dailies in `org-roam'
+;;         ├── logseq/          ;; private to Logseq, ignored by `org-roam'
+;;         └── pages/           ;; Logseq pages, `org-roam' files
 ;;
-;; The ordering of these rules matters, to ensure that when links are being
-;; processed (step 3 and 4), all org-id are already set.
+;; Sample `org-roam' configuration for interoperability with Logseq:
 ;;
-;; TODO: rewrite all this below
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;     (setq org-roam-directory "/path/to/org-roam-directory")
+;;     (setq org-roam-dailies-directory "journals/")
+;;     (setq org-roam-file-exclude-regexp "logseq/.*$")  ;; exclude Logseq files
+;;     (setq org-roam-capture-templates
+;;           '(("d" "default" plain "%?"
+;;              ;; Accomodates for the fact that Logseq uses the "pages" directory
+;;              :target (file+head "pages/${slug}.org" "#+title: ${title}\n")
+;;              :unnarrowed t))
+;;           org-roam-dailies-capture-templates
+;;           '(("d" "default" entry "* %?"
+;;              :target (file+head "%<%Y-%m-%d>.org" "#+title: %<%Y-%m-%d>\n"))))
 ;;
-;;  BACK UP YOUR LOGSEQ DIR BEFORE RUNNING THIS!
+;; Corresponding Logseq configuration for interoperability with `org-roam':
 ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; LICENSE
+;;     :preferred-format :org            ;; required
+;;     :pages-directory "pages"          ;; default
+;;     :journals-directory "journals"    ;; default, must match `org-roam-dailies-directory'
+;;     :journal/page-title-format "yyyy-MM-dd"   ;; match with `org-roam-dailies-caputre-templates'
+;;     :journal/file-name-format "yyyy-MM-dd"    ;; match with `org-roam-dailies-caputre-templates'
+;;     :preferred-workflow :todo          ;; recommended
+;;     :property-pages/enabled? false     ;; recommended, disable property pages
 ;;
-;; This code is a fork of
-;;    https://github.com/idanov/logseq-org-roam/ which is
-;; licensed under MIT, so this code is also MIT licensed.
+;; Finally, provide the following settings for `logseq-org-roam':
 ;;
-;; The work from Ivan Danov is a derivative work of
-;;    https://gist.github.com/zot/ddf1a89a567fea73bc3c8a209d48f527
-;; by William R. Burdick Jr.
+;;     (setq logseq-org-roam-link-types 'fuzzy) ;; or 'files, depending on the
+;;                                              ;; setting ":org-mode/insert-file-link?"
+;;                                              ;; See `logseq-org-roam-link-types'
+;;     (setq logseq-org-roam-pages-directory "pages")
+;;     (setq logseq-org-roam-journals-directory "journals")
+;;     (setq logseq-org-roam-journals-file-name-format "%Y-%m-%d")
+;;     (setq logseq-org-roam-journals-title-format "%Y-%m-%d")
 ;;
-;; The license of the derivative work here is MIT.
+;; With the configurations above, this package makes it possible to use Logseq
+;; and `org-roam' together.  This is what the author of this package does.
 ;;
-;; Logseq compatibility:
-;; - change fuzzy links from [[PAGE]] to [[id:2324234234][PAGE]]
-;; - change fuzzy links from [[ALIAS]] to [[id:2324234234][ALIAS]]
-;; - also change file links to id links, provided that the links
-;;   expand to file names that have ids in the roam database.
+;;; Caveats
 ;;
-;; NOTE:
-;; - This package converts the links only if they are not alias links due to a bug in Logseq:
-;;    https://github.com/logseq/logseq/issues/9342
+;; This package assumes that you prefer to use `org-roam' as your primary note
+;; taking tool; and Logseq as a companion.  When it converts a file from Logseq
+;; to `org-roam', it can update it link to use ID links.  Logseq recognizes ID
+;; links for navigation, but does not reference them properly as of version
+;; 0.10.3: this means that once converted to an ID link, the backlink will show
+;; under "Unlinked references" in Logseq.  This limitation extends to the graph;
+;; the link will not be shown in the graph.  In fact, a fully converted set of
+;; notes (where all links are ID links) will result in an empty graph.  However
+;; all files are still searchable and navigable in Logseq.  If you care about
+;; the graph in Logseq, this package is not for you.
 ;;
-;; Changes by Sylvain Bougerel from the original work of Ivan Danov & William R. Burdick Jr.:
+;; Logseq's workflow often results in leftovers "*" at the bottom files.  In
+;; some versions of `org', the `org-element' parser may throw errors
+;; (e.g. "wrong-side-of-point").  These errors prevent `org-roam' from parsing
+;; the buffer properly and updating the database.  Try to keep your files tidy
+;; in Logseq and not leave trailing stars.
 ;;
-;; - This package used to avoid putting ID in journal files, however this is
-;;   needed for backlinks to journal entries to work in Roam V2.
+;; This package only deal with updating a file's first section (top properties,
+;; title, aliases) and its links.  Converting timestamps, tags, asset location
+;; is not supported.  In some cases, interoperability can be maintained by
+;; keeping some discipline or aligning configurations (e.g. for templates).
 ;;
-;; - The hook that runs on opening a file to import it from Logseq avoids empty
-;;   buffers.
+;; Finally, the changes done by the package are destructive, and backup copies
+;; are not kept by this package.  The author uses version control.
 ;;
-;; - The hook that runs on opening a file now runs on `org-mode-hook' instead.
-;;   Running it on opening a file created a dependency or `org-mode' which could
-;;   not be met on time, as `org-element' requires `org-mode'.  This could
-;;   sometimes lead to issues with running `org-mode-db-sync'.
+;;; History
+;;
+;; This package is based on an original idea by William R Burdick Jr
+;; (https://gist.github.com/zot/ddf1a89a567fea73bc3c8a209d48f527) and its port
+;; to a package by Ivan Danov (https://github.com/idanov/org-roam-logseq.el).
+;; It is a complete rewrite.
+;;
+;; Some limitations in the orignal works above motivated me to write a new
+;; package:
+;;
+;; - `logseq-org-roam' is the single entry point
+;;
+;; - `logseq-org-roam' supports multiple `org-roam' directories (Logseq graphs)
+;;
+;; - `logseq-org-roam' has a more robust logic to match Logseq links to
+;;   `org-roam' nodes.  For example, it does not confuse internal links, it
+;;   supports aliases, disregards case-sensitivity for the file's base name, and
+;;   more.
+;;
+;; - `logseq-org-roam' provides better support for journal dates.
+;;
+;; - `logseq-org-roam' is able to add new entries from new (dead) links created
+;;   in Logseq, as you normally would in the `org-roam' workflow, since Logseq
+;;   does not do it.  Which in turn makes `org-roam' cache usage even more
+;;   relevant.
+;;
+;; - `logseq-org-roam' is verbose about the changes it makes.
+;;
+;; - Finally, `logseq-org-roam' should be rather fast; it should be able to
+;;   handle 500 files in about 10 seconds (when ignoring the cache)
+;;
+;; It's not all better.  `logseq-org-roam' has some drawbacks compared to the
+;; original works above:
+;;
+;; - No single-file update is provided, as in `org-roam-logseq.el'.
+;;
+;; - `logseq-org-roam' is considerably more complex (more than the author
+;;   anticipated).  Since it is a larger package, it should pay off to lazy-load
+;;   it.  To this end, autoload cookies are assigned to `logseq-org-roam' as
+;;   well as customization options.
 
 ;;; Code:
 (require 'org)
@@ -149,9 +205,9 @@ they are broken):
 Of the remaining fuzzy links, it discards links that match
 internally (as per `org-mode' rules) with:
 
- - <<targets>> or,
- - #+name: named elements or,
- - a headline by text search,
+- <<targets>> or,
+- #+name: named elements or,
+- a headline by text search,
 
 The leftover links are the candidates to be converted to
 `org-roam' external ID links.
@@ -164,15 +220,11 @@ to true in Logseq, presumably to ensure the correct target is
 being pointed to.
 
 Unfortunately, Logseq does not always provide a correct path (as
-of version 0.10.3) on platforms tested (Android, Linux).  TODO:
-replace following by a bug report and link it.
-
-When a note does not exist yet (or when it is aliased, see
-`https://github.com/logseq/logseq/issues/9342'), the path
-provided by Logseq is an incorrect concatenation of a relative
-parent '../' to an absolute path to the root of the graph.
-Logseq does not fix this path, even after the page is created.
-The user must fix it manually each time.
+of version 0.10.3) on platforms tested (Android, Linux). As of
+version 0.10.3, when a note does not exist yet (or when it is
+aliased, see `https://github.com/logseq/logseq/issues/9342'), the
+path provided by Logseq is incorrect.  (TODO: test in newer
+versions.)
 
 On the other hand `logseq-org-roam' cares to implement the
 complex matching rules set by `org-roam' to convert the right
@@ -237,7 +289,6 @@ If nil, date parsing is disabled."
 
 (defcustom logseq-org-roam-create-replace '(("[\\/]" . "_"))
   "Alist specifying replacements for fuzzy links.
-
 Car and cdr of each cons will be given as arguments to
 `replace-regexp-in-string' when converting fuzzy links to paths
 in `logseq-org-roam-create-translate-default'."
@@ -270,7 +321,7 @@ journal entires.  If you want journal entries to be created too,
 you can set this to `logseq-org-roam-logseq-p'.  If you want to
 allow files to be created anywhere, you can set this to `always'.
 
-When set to nil, creation is disabled."
+When set to nil, file creation is disabled."
   :type 'symbol
   :group 'logseq-org-roam)
 
@@ -1196,7 +1247,7 @@ Return non-nil if issues where found."
 (defun logseq-org-roam (&optional mode)
   "Migrate files edited with Logseq to `org-roam'.
 Parse files returned by `org-roam-list-files' that are not part
-of the `org-roam' index, and if it finds files that were created
+of the `org-roam' cache, and if it finds files that were created
 by Logseq, it updates these files to set ID, title, aliases, or
 convert links to other files by using ID-links.
 
@@ -1233,26 +1284,26 @@ by `org-roam-list-files' call this function with (triple)
 When calling `logseq-org-roam' programmatically it accepts the
 following arguments:
 
-nil: parse only files that are not yet indexed (by `org-roam')
+- nil: parse only files that are not yet indexed (by `org-roam')
   and does not create any new files (when it encounters a link
   created by Logseq without an existing target).
 
-\\='(4) or 4 or \\='force: parse all files (even those already
+- \\='(4) or 4 or \\='force: parse all files (even those already
   indexed) and does not create any new files.  Equivalent to
   \\[universal-argument] \\[logseq-org-roam].
 
-\\='(16) or 16 or \\='create: parse only files that are not yet
+- \\='(16) or 16 or \\='create: parse only files that are not yet
   indexed and create new files using your capture templates (when
   it encounters a Logseq link without target).  Equivalent to
   \\[universal-argument] \\[universal-argument]
   \\[logseq-org-roam].
 
-\\='(64) or 64 or \\='force-create: parse all files and create new
+- \\='(64) or 64 or \\='force-create: parse all files and create new
   files using your capture templates.  Equivalent to
   \\[universal-argument] \\[universal-argument]
   \\[universal-argument] \\[logseq-org-roam].
 
-To find out how `logseq-org-roam' dectect Logseq links, read the
+To find out how `logseq-org-roam' detects Logseq links, read the
 documentation string of `logseq-org-roam-link-types'.  To find
 out how `logseq-org-roam' uses your own capture templates, read
 the documentation string of `logseq-org-roam-capture'."
