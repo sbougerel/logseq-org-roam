@@ -214,7 +214,7 @@ out which fuzzy links point to journal entries (See
 
 You can set this to any format that `format-time-string' accepts.
 However, you should only use it to create date strings, and not
-time strings.  Generating hours and seconds in the format will
+time strings.  Having hours and seconds in the format will
 make it impossible to find out journal entries from fuzzy links."
   :type 'string
   :group 'logseq-org-roam)
@@ -225,7 +225,7 @@ make it impossible to find out journal entries from fuzzy links."
   "Try parsing a string into a date and return time when successful.
 When non-nil, this variable is called with `funcall'.  It is
 given 2 arguments: the first is a time format for
-`format-time-string', the second is the string to evaluate.  Tt
+`format-time-string', the second is the string to evaluate.  It
 is expected to return a time, like `date-to-time' or
 `encode-time'.  If the time returned is 0, it assumes that the
 string is not a date.  See `logseq-org-roam-maybe-date-default'
@@ -233,6 +233,15 @@ for a description of the default behaviour.
 
 If nil, date parsing is disabled."
   :type 'string
+  :group 'logseq-org-roam)
+
+(defcustom logseq-org-roam-create-replace '(("[\\/]" . "_"))
+  "Alist specifying replacements for fuzzy links.
+
+Car and cdr of each cons will be given as arguments to
+`replace-regexp-in-string' when converting fuzzy links to paths
+in `logseq-org-roam-create-translate-default'."
+  :type 'alist
   :group 'logseq-org-roam)
 
 ;;;###autoload (put 'logseq-org-roam-create-translate-func 'safe-local-variable #'symbolp)
@@ -293,15 +302,6 @@ When set to nil, creation is disabled."
 (defconst logseq-org-roam--log-buffer-name "*Logseq Org-roam %s*"
   "Name for the log buffer.
 '%s' will be replaced by `org-roam-directory' if present")
-
-(defcustom logseq-org-roam-create-replace '(("[\\/]" . "_"))
-  "Alist specifying replacements for fuzzy links.
-
-Car and cdr of each cons will be given as arguments to
-`replace-regexp-in-string' when converting fuzzy links to paths
-in `logseq-org-roam-create-translate-default'."
-  :type 'alist
-  :group 'logseq-org-roam)
 
 (defmacro logseq-org-roam--with-log-buffer (&rest body)
   "Bind standard output to a dedicated buffer for the duration of BODY."
@@ -1123,7 +1123,6 @@ Return the list of new files created."
 
 (defun logseq-org-roam--log-start (force create)
   "Log start of execution and state of FORCE and CREATE flags."
-  ;; TODO: log other settings
   (princ
    (concat
     (format "* Ran on %s\n" (format-time-string "%x at %X"))
@@ -1134,7 +1133,9 @@ Return the list of new files created."
     (format "- ~force~ was: %s\n" force)
     (format "- ~create~ was: %s\n" create)
     "With settings:\n"
-    (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types))))
+    (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types)
+    (format "- ~logseq-org-roam-journals-file-name-format~: %s" logseq-org-roam-journals-file-name-format)
+    (format "- ~logseq-org-roam-journals-title-format~: %s" logseq-org-roam-journals-title-format))))
 
 ;; TODO: test
 (defun logseq-org-roam--check-errors (files inventory)
@@ -1353,7 +1354,7 @@ the documentation string of `logseq-org-roam-capture'."
                                                    inventory 'links file-dict fuzzy-dict)
                       modified-files)
                  (run-hooks 'logseq-org-roam-updated-hook)))
-           ;; TODO: Add summary of results
+           ;; TODO: Refactor presentation of results, use an object instead
            ;; TODO: timing should be `unwind-protect'
            (setq elapsed (float-time (time-subtract (current-time) start)))
            (princ (format "Completed in %.3f seconds\n" elapsed))))))))
