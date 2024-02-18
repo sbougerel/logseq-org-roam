@@ -229,6 +229,7 @@ A [[test links]] matching headline.
       (org-mode)
       (setq actual (logseq-org-roam--parse-buffer
                     nil '(first-section file-links fuzzy-links))))
+    (pp actual)
     (should (equal actual expected))))
 
 (ert-deftest logseq-org-roam--parse-buffer--idempotent ()
