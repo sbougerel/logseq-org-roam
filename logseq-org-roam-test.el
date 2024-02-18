@@ -279,6 +279,7 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
       (org-mode)
+      ;; BUG: seems that links should be different, but it works???
       (setq actual (logseq-org-roam--parse-buffer
                     expected '(first-section file-links fuzzy-links))))
     (should (equal actual expected))))
