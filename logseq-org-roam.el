@@ -690,7 +690,7 @@ ID links."
             (let ((path (org-element-property :path element))
                   (content (org-element-property :contents-begin element)))
               (unless (or
-                       ;; "[[*Heading]]" links qualify as fuzzy, ignore them
+                       ;; "[[*Heading]]" links qualify as internal, ignore them
                        (string-match "\\`\\*" path)
                        ;; When the link has no content, ignore image types
                        (and (not content)

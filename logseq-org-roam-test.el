@@ -228,9 +228,13 @@ A [[test links]] matching headline.
 ")
       (org-mode)
       (mocker-let
-       (logseq-org-roam--image-file-p
-        (f)
-        ((:input '("image.jpg") :output t)))
+       ((logseq-org-roam--image-file-p
+         (f)
+         ((:input '("Logseq") :output nil)
+          (:input '("image.jpg") :output t)
+          (:input '("code-block") :output nil)
+          (:input '("target") :output nil)
+          (:input '("test links") :output nil))))
        (setq actual (logseq-org-roam--parse-buffer
                      nil '(first-section file-links fuzzy-links)))))
     (should (equal actual expected))))
