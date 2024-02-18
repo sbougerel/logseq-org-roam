@@ -36,6 +36,10 @@
 
 (require 'logseq-org-roam)
 
+(unless (fboundp #'always)
+  (defun always (&rest _)
+    t))
+
 (defun make-hash-table-from (alist)
   "Create a hash table from ALIST."
   (let ((inventory (make-hash-table :test #'equal)))
