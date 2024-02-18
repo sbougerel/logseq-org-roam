@@ -722,16 +722,16 @@ A [[test links]] matching headline.
            (f &optional n r w)
            ((:input '("a" nil nil nil) ; no modifications
              :output-generator (lambda (f &optional n r w)
-                                 (generate-new-buffer "*test*" t)))
+                                 (generate-new-buffer "*test*")))
             (:input '("h" nil nil nil) ; with modifications!
              :output-generator (lambda (f &optional n r w)
-                                 (let ((buf (generate-new-buffer "*test*" t)))
+                                 (let ((buf (generate-new-buffer "*test*")))
                                    (with-current-buffer buf
                                      (set-buffer-modified-p t))
                                    buf)))
             (:input '("i" nil nil nil) ; no modifications
              :output-generator (lambda (f &optional n r w)
-                                 (generate-new-buffer "*test*" t)))))
+                                 (generate-new-buffer "*test*")))))
           (save-buffer
            (&optional b)
            ((:occur 1
@@ -797,10 +797,10 @@ A [[test links]] matching headline.
            (f &optional n r w)
            ((:input '("a" nil nil nil) ; no modifications
              :output-generator (lambda (f &optional n r w)
-                                 (generate-new-buffer "*test*" t)))
+                                 (generate-new-buffer "*test*")))
             (:input '("h" nil nil nil) ; with modifications!
              :output-generator (lambda (f &optional n r w)
-                                 (let ((buf (generate-new-buffer "*test*" t)))
+                                 (let ((buf (generate-new-buffer "*test*")))
                                    (with-current-buffer buf
                                      (set-buffer-modified-p t))
                                    buf)))))
@@ -899,7 +899,7 @@ A [[test links]] matching headline.
            (f &optional n r w)
            ((:input-matcher #'always
              :output-generator (lambda (f &optional n r w)
-                                 (generate-new-buffer "*test*" t)))))
+                                 (generate-new-buffer "*test*")))))
           (org-id-get-create
            (&optional f)
            ((:input-matcher #'always
