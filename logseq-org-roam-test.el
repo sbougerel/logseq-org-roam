@@ -828,7 +828,7 @@ A [[test links]] matching headline.
                     ("Replace\\all\\backslash" . "/roam/pages/Replace_all_backslash.org")
                     ("Not date 2024" . "/roam/pages/Not date 2024.org")
                     ("Not date July 2024" . "/roam/pages/Not date July 2024.org")
-                    ("2023-12-01" . "/roam/pages/2023-12-01.org")
+                    ("2023-12-01" . "/roam/pages/2023-12-01.org") ;; not title-format
                     ("2023_12_01" . "/roam/journals/2023_12_01.org")))
         actual)
     (pcase-dolist (`(,input . ,expected) testdata)

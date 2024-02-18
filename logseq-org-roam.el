@@ -508,7 +508,7 @@ date, and the corresponding time is returned."
          (year (nth 5 parsed))
          (month (nth 4 parsed))
          (day (nth 3 parsed))
-         (time (safe-date-to-time hacked-date)))
+         (time (encode-time `(0 0 0 ,day ,month ,year nil -1 nil))))
     (if (and year month day
              (string= (format-time-string date-format time)
                       maybe-date))
