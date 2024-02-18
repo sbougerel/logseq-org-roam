@@ -227,9 +227,12 @@ A [[*Test links][headline link]].
 A [[test links]] matching headline.
 ")
       (org-mode)
-      (setq actual (logseq-org-roam--parse-buffer
-                    nil '(first-section file-links fuzzy-links))))
-    (pp actual)
+      (mocker-let
+       (logseq-org-roam--image-file-p
+        (f)
+        ((:input '("image.jpg") :output t)))
+       (setq actual (logseq-org-roam--parse-buffer
+                     nil '(first-section file-links fuzzy-links)))))
     (should (equal actual expected))))
 
 (ert-deftest logseq-org-roam--parse-buffer--idempotent ()
