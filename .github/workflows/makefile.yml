@@ -27,4 +27,4 @@ jobs:
       - uses: leotaku/elisp-check@master
         with:
           check: melpa
-          file: org-roam-logseq.el
+          file: logseq-org-roam.el
