@@ -1203,8 +1203,8 @@ Return the list of new files created."
     (format "- ~create~ was: %s\n" create)
     "With settings:\n"
     (format "- ~logseq-org-roam-link-types~: %S\n" logseq-org-roam-link-types)
-    (format "- ~logseq-org-roam-journals-file-name-format~: %s" logseq-org-roam-journals-file-name-format)
-    (format "- ~logseq-org-roam-journals-title-format~: %s" logseq-org-roam-journals-title-format))))
+    (format "- ~logseq-org-roam-journals-file-name-format~: %s\n" logseq-org-roam-journals-file-name-format)
+    (format "- ~logseq-org-roam-journals-title-format~: %s\n" logseq-org-roam-journals-title-format))))
 
 ;; TODO: test
 (defun logseq-org-roam--check-errors (files inventory)
