@@ -536,6 +536,8 @@ A [[test links]] matching headline.
            (a o &optional s e b)
            :ordered nil
            ((:record-cls mocker-passthrough-record
+             :min-occur 0 ;; seems to be called only in emacs 29.1 and above
+             :max-occur nil
              :input-matcher (lambda (a o &optional s e b)
                               (not (and (eq a 'sha256)
                                         (bufferp o)
@@ -622,6 +624,8 @@ A [[test links]] matching headline.
            (a o &optional s e b)
            :ordered nil
            ((:record-cls mocker-passthrough-record
+             :min-occur 0
+             :max-occur nil
              :input-matcher (lambda (a o &optional s e b)
                               (not (and (eq a 'sha256)
                                         (bufferp o)
@@ -698,6 +702,8 @@ A [[test links]] matching headline.
            (a o &optional s e b)
            :ordered nil
            ((:record-cls mocker-passthrough-record
+             :min-occur 0
+             :max-occur nil
              :input-matcher (lambda (a o &optional s e b)
                               (not (and (eq a 'sha256)
                                         (bufferp o)
@@ -771,6 +777,8 @@ A [[test links]] matching headline.
            (a o &optional s e b)
            :ordered nil
            ((:record-cls mocker-passthrough-record
+             :min-occur 0
+             :max-occur nil
              :input-matcher (lambda (a o &optional s e b)
                               (not (and (eq a 'sha256)
                                         (bufferp o)
