@@ -273,14 +273,15 @@ A [[test links]] matching headline.
 
 (ert-deftest logseq-org-roam--fill-fuzzy-dict--with-conflicts ()
   (let ((org-roam-directory default-directory)
-        (inventory (make-hash-table-from '(("x" . (:title "A"
+        (inventory (make-hash-table-from '(("w" . ())
+                                           ("x" . (:title "A"
                                                    :aliases ("b" "c")))
                                            ("y" . (:title "B"
                                                    :aliases ("d" "c")))
                                            ("z" . (:title "D"
                                                    :aliases ("e" "f"))))))
         (fuzzy-dict (make-hash-table :test #'equal))
-        (files '("x" "y" "z"))
+        (files '("w" "x" "y" "z"))
         actual
         logs)
     (with-temp-buffer

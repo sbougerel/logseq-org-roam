@@ -841,11 +841,13 @@ Returns the number of conflicts found"
           ;; NOTE: Similar title and aliases from the same file are not marked as conflict
           ;; TODO: cl-* could be faster
           (let ((merged (seq-uniq
-                         (seq-map #'logseq-org-roam--normalize-text
-                                  (append
-                                   (list (plist-get plist :title))
-                                   (plist-get plist :aliases)
-                                   (plist-get plist :roam-aliases)))
+                         (mapcar #'logseq-org-roam--normalize-text
+                                 (cl-remove nil
+                                            (append
+                                             (list (plist-get plist :title))
+                                             (plist-get plist :aliases)
+                                             (plist-get plist :roam-aliases))
+                                            :test #'eq))
                          #'string=)))
             (dolist (target merged)
               (let ((val (gethash target fuzzy-dict 'not-found))
