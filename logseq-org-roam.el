@@ -177,6 +177,7 @@
 ;;; Code:
 (require 'org)
 (require 'org-roam)
+(require 'image) ;; for `image-type-file-name-regexps' & `image-type-available-p'
 
 (defgroup logseq-org-roam nil
   "Convert Logseq files to `org-roam' files."
@@ -439,7 +440,6 @@ previously created."
      (insert-file-contents ,file)
      ,@body))
 
-;; TODO: test
 (defmacro logseq-org-roam--catch-fun (sym errs fun &rest body)
   "Catch ERRS for SYM during BODY's execution and pass it to FUN."
   (declare (indent 3) (debug t))
@@ -448,7 +448,7 @@ previously created."
        (if (and ,result
                 (symbolp ,result)
                 (memq ,result ,errs))
-           (,fun ,result)))))
+           (apply ,fun (list ,result))))))
 
 (defun logseq-org-roam--fl (file)
   "Make an org link to FILE relative to `org-roam-directory'."
@@ -495,8 +495,7 @@ previously created."
        (not (string-empty-p (org-element-property :value element)))))
 
 (defun logseq-org-roam-maybe-date-default (date-format maybe-date)
-  "Turn MAYBE-DATE into time if it matches DATE-FORMAT.
-
+  "When MAYBE-DATE match DATE-FORMAT, turn it into a time value.
 Attempts to parse MAYBE-DATE with `parse-time-string' first and
 convert it back to a string with `format-time-string' using
 DATE-FORMAT.  If both string match, it is taken as a journal
@@ -974,9 +973,9 @@ only with file links, this hashtable is not used."
   (pcase-dolist (`(_ ,beg ,end _ _ ,raw) links)
     (unless (string= (buffer-substring-no-properties beg end) raw)
       (throw 'update-error 'mismatch-link)))
-  ;; Avoid offset calculations with buffer updates
-  (sort links (lambda (a b) (> (nth 1 a) (nth 1 b))))
-  (pcase-dolist (`(,type ,beg ,end ,path ,descr _) links)
+  (pcase-dolist (`(,type ,beg ,end ,path ,descr _)
+                 ;; Avoid offset calculations with buffer updates
+                 (sort links (lambda (a b) (> (nth 1 a) (nth 1 b)))))
     (when-let ((id (plist-get
                     (gethash
                      ;; file-dict and fuzzy-dict key can be `consp' (conflict)
@@ -1248,19 +1247,19 @@ Return non-nil if issues where found."
   "Check that `org-roam' is installed and configured."
   (cond
    ((not (featurep 'org-roam))
-    (user-error "logseq-org-roam: `org-roam' is not installed"))
+    (user-error "Feature `org-roam' is not found"))
    ((not org-roam-directory)
-    (user-error "logseq-org-roam: `org-roam-directory' is not set"))
+    (user-error "Variable `org-roam-directory' is nil"))
    ((not (file-directory-p org-roam-directory))
-    (user-error "logseq-org-roam: `org-roam-directory' is not a directory"))
+    (user-error "Directory `org-roam-directory' does not exists"))
    ((not (file-exists-p (expand-file-name
                          logseq-org-roam-pages-directory
                          org-roam-directory)))
-    (user-error "logseq-org-roam: Logseq pages must be found directly under `org-roam-directory'"))
+    (user-error "Logseq pages must be found directly under `org-roam-directory'"))
    ((not (file-exists-p (expand-file-name
                          logseq-org-roam-journals-directory
                          org-roam-directory)))
-    (user-error "logseq-org-roam: Logseq journals must be found directly under `org-roam-directory'"))
+    (user-error "Logseq journals must be found directly under `org-roam-directory'"))
    (t)))
 
 ;;;###autoload
