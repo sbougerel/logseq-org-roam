@@ -68,8 +68,8 @@ Corresponding Logseq configuration for interoperability with `org-roam`:
     :preferred-format :org            ;; required
     :pages-directory "pages"          ;; default
     :journals-directory "journals"    ;; default, must match `org-roam-dailies-directory`
-    :journal/page-title-format "yyyy-MM-dd"   ;; match with `org-roam-dailies-caputre-templates`
-    :journal/file-name-format "yyyy-MM-dd"    ;; match with `org-roam-dailies-caputre-templates`
+    :journal/page-title-format "yyyy-MM-dd"   ;; match with `org-roam-dailies-capture-templates`
+    :journal/file-name-format "yyyy-MM-dd"    ;; match with `org-roam-dailies-capture-templates`
     :preferred-workflow :todo          ;; recommended
     :property-pages/enabled? false     ;; recommended, disable property pages
 
@@ -84,7 +84,7 @@ Finally, provide the following settings for `logseq-org-roam`:
     (setq logseq-org-roam-journals-title-format "%Y-%m-%d")
 
 With the configurations above, this package makes it possible to use Logseq
-and `org-roam` together.  This is what the author of this package does.
+and `org-roam` together.
 
 ### Caveats
 
